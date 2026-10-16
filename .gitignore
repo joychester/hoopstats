@@ -1,0 +1,33 @@
+# Python environment and caches
+.venv/
+__pycache__/
+*.pyc
+
+# Models: download them with the commands in README (yolox_m.onnx exceeds GitHub's 100 MB limit)
+models/
+
+# Game footage and everything derived from it (players are minors; never commit)
+games/
+output/
+hoopstats_output/
+*.mov
+*.MOV
+*.mp4
+*.MP4
+*.m4v
+*.jpg
+*.png
+
+# Evaluation working files that can contain player images
+eval/**/tracks.pkl
+eval/**/*.jpg
+
+# macOS
+.DS_Store
+
+# Labels from real games describe the players (hair, clothes, numbers); keep them local
+eval/game*/
+
+# Exported reviews and stats from real games
+*_review.json
+*_stats.csv

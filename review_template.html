@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minutes Review</title>
+<style>
+:root{
+  --court:#1f4a3a;      /* court green */
+  --court-ink:#e8efe9;
+  --line:#c8312b;       /* line red */
+  --paper:#f6f7f5;
+  --ink:#1b211e;
+  --quiet:#5d6862;
+  --rule:#d9ddd9;
+  --board:#141815;      /* scoreboard panel */
+  --amber:#ffb21e;      /* scoreboard digits */
+  --amber-dim:#5a4313;
+  --digits:"DIN Condensed","DIN Alternate","Bahnschrift","Arial Narrow",sans-serif;
+  --text:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.6 var(--text)}
+header{background:var(--court);color:var(--court-ink);padding:14px 24px;display:flex;gap:16px;align-items:baseline;flex-wrap:wrap}
+header h1{font-size:20px;margin:0;font-weight:600}
+header .meta{color:#b9cbbf;font-size:13px}
+main{max-width:1280px;margin:0 auto;padding:20px 24px 48px}
+.top{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(300px,1fr);gap:20px;align-items:start}
+video{width:100%;background:#000;border-radius:6px;display:block}
+.hint{color:var(--quiet);font-size:13px;margin:6px 0 0}
+
+/* scoreboard */
+.board{background:var(--board);border-radius:10px;padding:16px 18px;color:#cfd6d1}
+.board h2{margin:0 0 10px;font-size:15px;font-weight:500;color:#9aa69f}
+.board table{width:100%;border-collapse:collapse}
+.board td{padding:6px 0;border-top:1px solid #262c28;vertical-align:baseline}
+.board tr:first-child td{border-top:0}
+.board .num{font:600 34px/1 var(--digits);color:var(--amber);width:52px;text-shadow:0 0 12px rgba(255,178,30,.35)}
+.board .num.unk{color:var(--amber-dim);text-shadow:none}
+.board .name{font-size:15px;color:#e6ebe7}
+.board .sub{font-size:12px;color:#7d8a82}
+.board .time{font:600 40px/1 var(--digits);color:var(--amber);text-align:right;font-variant-numeric:tabular-nums;text-shadow:0 0 14px rgba(255,178,30,.4)}
+.board .empty{color:#7d8a82;font-size:14px;padding:18px 0}
+.board .controls{margin-top:12px;padding-top:12px;border-top:1px solid #262c28;font-size:13px;color:#9aa69f}
+.board input[type=range]{width:100%;accent-color:var(--amber)}
+.board .actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+
+button{font:inherit;font-size:14px;border-radius:6px;border:1px solid var(--rule);background:#fff;color:var(--ink);padding:6px 12px;cursor:pointer}
+button.primary{background:var(--amber);border-color:var(--amber);color:#1b1305;font-weight:600}
+.board button:not(.primary){background:transparent;color:#cfd6d1;border-color:#3a423d}
+button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--court);outline-offset:2px}
+.board button:focus-visible{outline-color:var(--amber)}
+
+section{margin-top:32px}
+section > h2{font-size:17px;margin:0 0 4px;font-weight:600}
+section > p{margin:0 0 12px;color:var(--quiet);font-size:14px;max-width:70ch}
+
+/* roster */
+.roster{display:grid;grid-template-columns:minmax(0,320px) 1fr;gap:16px;align-items:start}
+textarea{width:100%;min-height:140px;font:15px/1.6 var(--text);padding:8px 10px;border:1px solid var(--rule);border-radius:6px;background:#fff}
+
+/* groups */
+.tl{display:grid;grid-template-columns:64px minmax(0,1fr) 200px;gap:14px;align-items:center;padding:12px 0;border-top:1px solid var(--rule)}
+.tl:last-child{border-bottom:1px solid var(--rule)}
+.tl .id{font:600 26px/1 var(--digits);color:var(--quiet)}
+.tl.done .id{color:var(--court)}
+.tl.ignored{opacity:.45}
+.tl .strip{display:block;max-width:100%;height:120px;object-fit:contain;object-position:left;border-radius:4px;cursor:pointer}
+.tl .when{font-size:13px;color:var(--quiet);margin-top:4px}
+.tl .when button{font-size:12px;padding:2px 8px;margin-left:6px}
+select{font:inherit;width:100%;padding:6px 8px;border:1px solid var(--rule);border-radius:6px;background:#fff}
+
+.pieces{grid-column:2/-1;margin:4px 0 0;padding:0 0 0 0}
+.piece{display:grid;grid-template-columns:minmax(0,1fr) 200px;gap:14px;align-items:center;padding:8px 0;border-top:1px dashed var(--rule)}
+.piece img{height:90px;display:block;border-radius:4px;cursor:pointer;max-width:100%;object-fit:contain;object-position:left}
+.piece.over select{border-color:var(--court);font-weight:600}
+.toggle{font-size:12px;padding:2px 8px;margin-left:6px}
+
+/* timeline */
+.lanes{background:#fff;border:1px solid var(--rule);border-radius:6px;padding:12px 16px}
+.lane{display:grid;grid-template-columns:120px 1fr;gap:12px;align-items:center;height:30px}
+.lane .who{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lane svg{width:100%;height:18px;display:block;cursor:pointer}
+.axis{display:grid;grid-template-columns:120px 1fr;gap:12px;font-size:12px;color:var(--quiet)}
+.axis div:last-child{display:flex;justify-content:space-between}
+
+@media (max-width:820px){
+  main{padding:16px}
+  .top,.roster{grid-template-columns:1fr}
+  .tl{grid-template-columns:48px minmax(0,1fr);}
+  .tl select{grid-column:1/-1}
+  .lane,.axis{grid-template-columns:80px 1fr}
+}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Minutes Review</h1>
+  <span class="meta" id="meta"></span><a id="back" class="meta" style="margin-left:auto;color:#e8efe9" hidden>Back to game summary</a>
+</header>
+<main>
+  <div class="top">
+    <div>
+      <video id="vid" src="video.mp4" controls preload="metadata"></video>
+      <p class="hint">Yellow boxes are our players as the system found them. The label on each box matches a group below.</p>
+    </div>
+    <aside class="board" aria-label="Minutes played">
+      <h2>Minutes played</h2>
+      <table id="board"></table>
+      <div class="controls">
+        <label for="gap">Still counted on court when off camera for up to <span id="gapv"></span> s</label>
+        <input id="gap" type="range" min="0" max="60" step="1" value="15">
+      </div>
+      <div class="actions">
+        <button class="primary" id="csv">Export CSV</button>
+        <button id="savejson">Save assignments</button>
+      </div>
+    </aside>
+  </div>
+
+  <section>
+    <h2>Roster</h2>
+    <p>One player per line, number first, e.g. “7 Emma”. The pickers below update as you type.</p>
+    <div class="roster">
+      <textarea id="roster" spellcheck="false" aria-label="Roster"></textarea>
+    </div>
+  </section>
+
+  <section>
+    <h2>Who is in each group</h2>
+    <p>The system grouped clips of the same player by appearance. Pick a player for each group. If one player was split into several groups, pick the same name for each. If a group contains someone else, open Show pieces and fix that piece. Choose Ignore for anyone who is not on our team.</p>
+    <div id="tracklets"></div>
+  </section>
+
+  <section>
+    <h2>On-court timeline</h2>
+    <p>Dark bars are the time counted as on court; thin lines are when the camera actually saw the player. Click a timeline to jump the video.</p>
+    <div class="lanes" id="lanes"></div>
+  </section>
+</main>
+
+<script src="data.js"></script>
+<script>
+const G = window.GAME;
+const KEY = "hoopstats2:" + G.video;
+const $ = id => document.getElementById(id);
+let state = {roster:"", groups:{}, pieces:{}, gap:15, open:{}};
+try { Object.assign(state, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch(e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e) {} };
+
+$("title").textContent = G.title;
+$("meta").textContent = `${G.video}, ${fmt(G.duration)} long, our jersey: ${G.team}`;
+if (G.back) { $("back").href = G.back; $("back").hidden = false; }
+if (!state.roster && G.roster) state.roster = G.roster;
+
+function fmt(s){ s = Math.round(s); return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`; }
+function players(){
+  return state.roster.split("\n").map(l => l.trim()).filter(Boolean).map((l,i) => {
+    const m = l.match(/^#?(\d{1,3})\s*(.*)$/);
+    return m ? {key:"p"+m[1], num:m[1], name:m[2] || ""} : {key:"n"+i, num:"", name:l};
+  });
+}
+function intervals(pkey){
+  const segs = [];
+  G.groups.forEach(g => g.pieces.forEach(p => {
+    if ((state.pieces[p.id] || state.groups[g.id]) === pkey) segs.push([p.start, p.end]);
+  }));
+  segs.sort((a,b) => a[0]-b[0]);
+  const merged = [];
+  for (const [s,e] of segs){
+    const last = merged[merged.length-1];
+    if (last && s - last[1] <= state.gap) last[1] = Math.max(last[1], e);
+    else merged.push([s,e]);
+  }
+  return {segs, merged, total: merged.reduce((a,[s,e]) => a + e - s, 0)};
+}
+
+function optionsHtml(ps, v, follow){
+  return [follow ? `<option value="">Same as group</option>` : `<option value="">Unassigned</option>`]
+    .concat(ps.map(p => `<option value="${p.key}" ${v===p.key?"selected":""}>${p.num?("#"+p.num+" "):""}${esc(p.name)}</option>`))
+    .concat([`<option value="ignore" ${v==="ignore"?"selected":""}>Ignore (not our team)</option>`]).join("");
+}
+function seekTo(t){ const vd = $("vid"); vd.currentTime = t; vd.play(); vd.scrollIntoView({block:"nearest"}); }
+function renderTracklets(){
+  const ps = players(), box = $("tracklets");
+  box.innerHTML = "";
+  G.groups.forEach(g => {
+    const row = document.createElement("div");
+    const v = state.groups[g.id] || "";
+    row.className = "tl" + (v === "ignore" ? " ignored" : v ? " done" : "");
+    const n = g.pieces.length, open = !!state.open[g.id];
+    row.innerHTML = `
+      <div class="id">${g.id}</div>
+      <div>
+        <img class="strip" src="crops/${g.id}.jpg" alt="Player snapshots for ${g.id}" loading="lazy">
+        <div class="when">${fmt(g.start)} to ${fmt(g.end)}, seen for ${g.seen_s} s, ${n} piece${n===1?"":"s"}<button type="button" class="play">Play</button><button type="button" class="toggle" aria-expanded="${open}">${open?"Hide pieces":"Show pieces"}</button></div>
+      </div>
+      <select aria-label="Player for ${g.id}">${optionsHtml(ps, v, false)}</select>
+      ${open ? `<div class="pieces">${g.pieces.map(p => {
+          const pv = state.pieces[p.id] || "";
+          return `<div class="piece${pv?" over":""}" data-p="${p.id}">
+            <div><img src="crops/${p.id}.jpg" alt="Snapshots for ${p.id}" loading="lazy" data-t="${p.start}">
+              <div class="when">${p.id}: ${fmt(p.start)} to ${fmt(p.end)}, ${p.seen_s} s</div></div>
+            <select aria-label="Player for ${p.id}">${optionsHtml(ps, pv, true)}</select></div>`; }).join("")}</div>` : ""}`;
+    row.querySelector(".strip").onclick = () => seekTo(g.start);
+    row.querySelector(".play").onclick = () => seekTo(g.start);
+    row.querySelector(".toggle").onclick = () => { state.open[g.id] = !open; save(); renderTracklets(); };
+    row.querySelector(":scope > select").onchange = e => { state.groups[g.id] = e.target.value; save(); renderAll(); };
+    row.querySelectorAll(".piece").forEach(pe => {
+      pe.querySelector("img").onclick = e => seekTo(+e.target.dataset.t);
+      pe.querySelector("select").onchange = e => { state.pieces[pe.dataset.p] = e.target.value; save(); renderAll(); };
+    });
+    box.appendChild(row);
+  });
+}
+
+function renderBoard(){
+  const ps = players(), tb = $("board");
+  $("gapv").textContent = state.gap;
+  const rows = ps.map(p => ({p, ...intervals(p.key)})).filter(r => r.segs.length);
+  if (!rows.length){
+    tb.innerHTML = `<tr><td class="empty">Fill in the roster, then pick a player for each group. Minutes appear here.</td></tr>`;
+    return;
+  }
+  rows.sort((a,b) => b.total - a.total);
+  tb.innerHTML = rows.map(r => `<tr>
+      <td class="num ${r.p.num?"":"unk"}">${r.p.num || "–"}</td>
+      <td><div class="name">${esc(r.p.name) || "#"+r.p.num}</div><div class="sub">seen ${Math.round(r.segs.reduce((a,[s,e])=>a+e-s,0))} s</div></td>
+      <td class="time">${fmt(r.total)}</td></tr>`).join("");
+}
+
+function renderLanes(){
+  const ps = players(), D = G.duration, el = $("lanes");
+  const rows = ps.map(p => ({p, ...intervals(p.key)})).filter(r => r.segs.length);
+  if (!rows.length){ el.innerHTML = `<div class="hint">No groups assigned yet.</div>`; return; }
+  el.innerHTML = rows.map(r => `<div class="lane">
+      <div class="who">${r.p.num?"#"+r.p.num+" ":""}${esc(r.p.name)}</div>
+      <svg viewBox="0 0 1000 18" preserveAspectRatio="none" data-lane>
+        <rect x="0" y="8" width="1000" height="2" fill="#e3e6e3"/>
+        ${r.merged.map(([s,e]) => `<rect x="${s/D*1000}" y="2" width="${Math.max(2,(e-s)/D*1000)}" height="14" rx="3" fill="#1f4a3a"/>`).join("")}
+        ${r.segs.map(([s,e]) => `<rect x="${s/D*1000}" y="8" width="${Math.max(1,(e-s)/D*1000)}" height="2" fill="#ffb21e"/>`).join("")}
+        <line class="ph" x1="0" x2="0" y1="0" y2="18" stroke="#c8312b" stroke-width="3"/>
+      </svg></div>`).join("") +
+    `<div class="axis"><div></div><div><span>0:00</span><span>${fmt(D/2)}</span><span>${fmt(D)}</span></div></div>`;
+  el.querySelectorAll("svg[data-lane]").forEach(svg => svg.onclick = e => {
+    const r = svg.getBoundingClientRect(); $("vid").currentTime = (e.clientX - r.left) / r.width * D;
+  });
+  playhead();
+}
+function playhead(){
+  const x = $("vid").currentTime / G.duration * 1000;
+  document.querySelectorAll(".ph").forEach(l => { l.setAttribute("x1", x); l.setAttribute("x2", x); });
+}
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function renderAll(){ renderTracklets(); renderBoard(); renderLanes(); }
+
+function download(name, text, type){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], {type}));
+  a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+$("csv").onclick = () => {
+  const lines = ["Number,Name,Minutes,Seconds on court,Seconds seen"];
+  players().forEach(p => { const r = intervals(p.key); if (!r.segs.length) return;
+    lines.push([p.num, p.name, fmt(r.total), Math.round(r.total), Math.round(r.segs.reduce((a,[s,e])=>a+e-s,0))].join(",")); });
+  download(G.video.replace(/\.\w+$/,"") + "_minutes.csv", "﻿" + lines.join("\n"), "text/csv");
+};
+$("savejson").onclick = () => download(G.video.replace(/\.\w+$/,"") + "_assignments.json", JSON.stringify(state, null, 2), "application/json");
+
+$("roster").value = state.roster;
+$("roster").oninput = e => { state.roster = e.target.value; save(); renderAll(); };
+$("gap").value = state.gap;
+$("gap").oninput = e => { state.gap = +e.target.value; save(); renderBoard(); renderLanes(); };
+$("vid").addEventListener("timeupdate", playhead);
+renderAll();
+</script>
+</body>
+</html>
