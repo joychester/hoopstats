@@ -108,6 +108,14 @@ textarea{width:100%;min-height:150px;font:15px/1.6 var(--text);padding:8px 10px;
 .video > summary::-webkit-details-marker{display:none}
 .video > summary h2{margin:0;font-size:17px;font-weight:600}
 .video > summary .sub{color:var(--quiet);font-size:13px}
+.scored{margin-left:auto;display:inline-flex;align-items:center;gap:4px;font:600 18px/1 var(--digits);color:#b4581a;
+  background:#fdf0e3;border:1px solid #f3d3b4;border-radius:999px;padding:3px 9px 3px 5px}
+.scored svg{width:26px;height:26px}
+.scored .rim{stroke:#c8312b;stroke-width:2;stroke-linecap:round;fill:none}
+.scored .net{stroke:#9aa69f;stroke-width:1;fill:none;stroke-linejoin:round}
+.scored .ball{fill:#ef7d1a;stroke:#7a3a0c;stroke-width:1}
+.scored .seam{stroke:#7a3a0c;stroke-width:.9;fill:none}
+.video > summary .scored + .count{margin-left:12px}
 .video > summary .count{margin-left:auto;font:600 22px/1 var(--digits);color:var(--quiet)}
 .video.complete > summary .count{color:var(--court)}
 .vbody{padding:0 18px 18px;border-top:1px solid var(--rule)}
@@ -393,6 +401,16 @@ function spotHtml(val, dir, k) {
   </fieldset>`;
 }
 
+// ball-through-hoop badge on videos with confirmed points, so scoring videos stand out even when folded
+const HOOP_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18" class="rim"/><path d="M5 5l2 6h10l2-6M8.5 5l1 6m5.5-6l-1 6M12 5v6" class="net"/>
+  <circle cx="12" cy="15.5" r="5" class="ball"/><path d="M7 15.5h10M12 10.5v10M8.6 11.8c1.6 1.8 1.6 5.6 0 7.4M15.4 11.8c-1.6 1.8-1.6 5.6 0 7.4" class="seam"/></svg>`;
+function scoreBadge(v, cl) {
+  let pts = 0;
+  cl.forEach(c => { const x = S.clips[key(v, c)];
+    if (!x || !x.done) return;
+    pts += x.result === "2" ? 2 : x.result === "3" ? 3 : x.result === "ft" ? +(x.ftm || 0) : 0; });
+  return pts ? `<span class="scored" title="${pts} point${pts === 1 ? "" : "s"} in confirmed clips">${HOOP_ICON}+${pts}</span>` : "";
+}
 function renderVideos() {
   const ps = players(), box = $("videos");
   const scrollY = window.scrollY;
@@ -433,7 +451,7 @@ function renderVideos() {
     el.className = "video" + (cl.length && done === cl.length ? " complete" : "");
     el.open = S.open[v.name] !== false;
     el.innerHTML = `
-      <summary><h2>${esc(v.name)}</h2><span class="sub">${fmt(v.duration)} long, ${cl.length} clips to review</span><span class="count">${done} / ${cl.length}</span></summary>
+      <summary><h2>${esc(v.name)}</h2><span class="sub">${fmt(v.duration)} long, ${cl.length} clips to review</span>${scoreBadge(v, cl)}<span class="count">${done} / ${cl.length}</span></summary>
       <div class="vbody">
         <div class="dir">We attack the
           <span class="seg" role="group" aria-label="Basket we attack">
