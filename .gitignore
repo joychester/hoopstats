@@ -31,3 +31,6 @@ eval/game*/
 # Exported reviews and stats from real games
 *_review.json
 *_stats.csv
+
+# The one screenshot used in README (names, teams and location blurred)
+!summary_screenshot.png
