@@ -1,4 +1,4 @@
-# HoopStats: basketball stats from phone video (prototype)
+# HoopStats: basketball stats from phone video
 
 > ⚠️ **Warning: vibe-coded with AI.** I built this toy app so I could turn phone videos of my daughter's middle school basketball games into quick stats, without spending every weekend rewinding footage. The whole thing was made by chatting with an AI, so it may well be 100% certified AI slop: confident-looking stats, code that works for reasons nobody fully understands, and the occasional possession handed to the wrong team. Do not use it to settle playground arguments, decide playing time, or explain to a parent why their kid got zero assists. Check the numbers like you'd check the ref. That said, it has already saved me hours of work.
 
