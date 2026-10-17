@@ -4,10 +4,12 @@ __pycache__/
 *.pyc
 
 # Models: download them with the commands in README (yolox_m.onnx exceeds GitHub's 100 MB limit)
-models/
+models/*
+!models/README.md
 
 # Game footage and everything derived from it (players are minors; never commit)
-games/
+games/*
+!games/README.md
 output/
 hoopstats_output/
 *.mov
