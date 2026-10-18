@@ -118,6 +118,16 @@ textarea{width:100%;min-height:150px;font:15px/1.6 var(--text);padding:8px 10px;
 .video > summary .scored + .count{margin-left:12px}
 .video > summary .count{margin-left:auto;font:600 22px/1 var(--digits);color:var(--quiet)}
 .video.complete > summary .count{color:var(--court)}
+/* videos with clips still to confirm stand out, done videos get a quiet green bar */
+:root{--todo:#d98a1c;--todo-bg:#fff6e8;--todo-line:#f1cf9a;--todo-ink:#8a4b08}
+.video.pending{border-color:var(--todo-line);box-shadow:inset 6px 0 0 var(--todo)}
+.video.pending > summary{background:var(--todo-bg);border-radius:12px}
+.video.pending[open] > summary{border-radius:12px 12px 0 0}
+.video.pending > summary .count{color:var(--todo-ink)}
+.video.complete{box-shadow:inset 6px 0 0 var(--court)}
+.todo{display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;color:var(--todo-ink);background:#fde7c4;border-radius:999px;padding:2px 10px}
+.todo::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--todo)}
+.clip:not(.done){box-shadow:inset 4px 0 0 var(--todo-line)}
 .vbody{padding:0 18px 18px;border-top:1px solid var(--rule)}
 .dir{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 0;font-size:14px}
 .seg{display:inline-flex;border:1px solid var(--rule);border-radius:6px;overflow:hidden}
@@ -500,10 +510,10 @@ function renderVideos() {
         ? `<span class="note warn">Set from the whole game. This video alone points to the ${own} basket (${Math.round(ownConf * 100)}% of its frames). If it was filmed after the teams switched sides, choose ${own}.</span>`
       : `<span class="note">Set from the whole game (${Math.round(conf * 100)}% of all frames agree).</span>`;
     const el = document.createElement("details");
-    el.className = "video" + (cl.length && done === cl.length ? " complete" : "");
+    el.className = "video" + (cl.length && done === cl.length ? " complete" : done < cl.length ? " pending" : "");
     el.open = S.open[v.name] !== false;
     el.innerHTML = `
-      <summary><h2>${esc(v.name)}</h2><span class="sub">${fmt(v.duration)} long, ${cl.length} clips to review</span>${scoreBadge(v, cl)}<span class="count">${done} / ${cl.length}</span></summary>
+      <summary><h2>${esc(v.name)}</h2><span class="sub">${fmt(v.duration)} long, ${cl.length} clip${cl.length === 1 ? "" : "s"}</span>${done < cl.length ? `<span class="todo">${cl.length - done} to confirm</span>` : ""}${scoreBadge(v, cl)}<span class="count">${done} / ${cl.length}</span></summary>
       <div class="vbody">
         <div class="dir">We attack the
           <span class="seg" role="group" aria-label="Basket we attack">
