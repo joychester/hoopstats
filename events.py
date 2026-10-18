@@ -69,9 +69,42 @@ def segments(x, t, attack="right", min_len=2.0):
             out[-1]["end"] = g["end"]
         else:
             out.append(dict(g))
+    tail = tail_segment(xs, t, out, a, b, lo, hi)
+    if tail:
+        out[-1]["end"] = float(round(tail["start"] - (t[1] - t[0]), 3))
+        out.append(tail)
     for g in out:
         g["offense"] = g["side"] == attack
     return out
+
+
+TAIL_MIN = 1.0         # seconds the camera must stay past the middle at the end of a video
+
+
+def tail_segment(xs, t, segs, a, b, lo, hi):
+    """A video often stops while the camera is still swinging to the other half (a fast
+    break caught in the last seconds). The hysteresis then never fires and that possession
+    is lost. If, at the very end, the camera has crossed the middle of the court toward
+    the other half, stayed there TAIL_MIN seconds and travelled a good part of the court
+    width, start a final segment for that half at the moment it crossed the middle."""
+    if not segs:
+        return None
+    last = segs[-1]
+    mid = (a + b) / 2
+    to_right = last["side"] == "left"
+    past = (xs > mid) if to_right else (xs < mid)
+    if not past[-1]:
+        return None
+    i = len(xs) - 1
+    while i > 0 and past[i - 1]:
+        i -= 1
+    if t[i] <= last["start"] or t[-1] - t[i] < TAIL_MIN:
+        return None
+    seg = xs[(t >= last["start"]) & (t <= t[i])]
+    swing = (xs[-1] - seg.min()) if to_right else (seg.max() - xs[-1])
+    if swing < 0.4 * (hi - lo):
+        return None
+    return {"side": "right" if to_right else "left", "start": float(t[i]), "end": float(t[-1]), "tail": True}
 
 
 def cut(video, t0, t1, path):
@@ -80,7 +113,7 @@ def cut(video, t0, t1, path):
                     "-c:a", "aac", "-b:a", "64k", "-movflags", "+faststart", path], check=True)
 
 
-CLIPS_VERSION = 7
+CLIPS_VERSION = 8
 PRE_WIN = 7.0          # seconds kept before the camera swings to our half (5 s + 2 s extra lead-in)
 MIN_FIRST = 8.0        # first segment of a video must last this long, or the ball is likely already the other team's
 
