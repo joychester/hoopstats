@@ -34,5 +34,6 @@ eval/game*/
 *_review.json
 *_stats.csv
 
-# The one screenshot used in README (names, teams and location blurred)
+# Screenshots used in README (names, teams and location blurred; the game flow shows no names)
 !summary_screenshot.png
+!game_flow_screenshot.png

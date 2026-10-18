@@ -8,6 +8,10 @@ Turn phone videos of a youth basketball game into a box score, shot chart and tu
 
 *The game summary page from a real test game. Player names, team names and the location are blurred.*
 
+![Game flow timeline: points and turnovers by estimated game time, with the running score as a dashed line](game_flow_screenshot.png)
+
+*The game flow timeline for the same game: when we scored and turned the ball over in each half.*
+
 ## What it does
 
 You film the game on a phone the usual way, following the ball. HoopStats does the tedious part, and you confirm what happened in each short clip.
