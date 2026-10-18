@@ -203,6 +203,36 @@ button.round:hover{background:var(--court);color:#fff;border-color:var(--court)}
 .tabs button{border:1px solid var(--rule);border-bottom:0;border-radius:8px 8px 0 0;padding:8px 18px;font-weight:600;background:#fff;color:var(--quiet);display:flex;gap:10px;align-items:baseline}
 .tabs button[aria-selected=true]{background:var(--court);border-color:var(--court);color:#fff}
 .tabs .tcount{font:600 18px/1 var(--digits);opacity:.85}
+/* game flow timeline */
+.flow{background:#fff;border:1px solid var(--rule);border-radius:12px;margin-bottom:18px}
+.flow > summary{list-style:none;cursor:pointer;padding:12px 18px;display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.flow > summary::-webkit-details-marker{display:none}
+.flow > summary h2{margin:0;font-size:17px;font-weight:600}
+.flow > summary .sub{color:var(--quiet);font-size:13px}
+.flow > summary::after{content:"▾";margin-left:auto;color:var(--quiet)}
+.flow:not([open]) > summary::after{content:"▸"}
+.flowbody{padding:0 18px 16px;border-top:1px solid var(--rule)}
+.flowctl{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:10px 0 4px;font-size:13px;color:var(--quiet)}
+.flowctl label{display:inline-flex;gap:6px;align-items:center}
+.flowctl select,.flowctl input{width:auto;font-size:13px;padding:3px 6px}
+.flowctl input{width:56px;border:1px solid var(--rule);border-radius:6px;font:inherit}
+.flowctl .spacer{flex:1}
+.flowctl button{font-size:13px;padding:4px 10px}
+.flowkeys{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--quiet);margin:4px 0 0}
+.flowkeys i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.flowkeys i.pt{background:#d4661a}.flowkeys i.to{background:#7e4fb8;border-radius:2px;transform:rotate(45deg) scale(.85)}
+.flowkeys i.bin{border-radius:2px;width:14px;background:linear-gradient(#f6d9c4 50%,#e5d9f1 50%)}
+.flowwrap{position:relative}
+.flowwrap svg{display:block;width:100%;height:auto}
+.flowwrap svg [data-i]{cursor:pointer}
+.flowtip{position:absolute;pointer-events:none;background:#1b211e;color:#fff;font-size:12px;line-height:1.4;padding:6px 9px;border-radius:6px;white-space:nowrap;transform:translate(-50%,-100%);margin-top:-10px;z-index:3}
+.flowtip[hidden]{display:none}
+.flownote{font-size:13px;color:var(--ink);margin:8px 0 0}
+.flownote b{font-weight:600}
+.flowhow{font-size:12px;color:var(--quiet);margin:4px 0 0}
+.flowempty{font-size:14px;color:var(--quiet);padding:12px 0 4px}
+.clip.flash{animation:flash 1.6s ease-out}
+@keyframes flash{0%{box-shadow:0 0 0 4px var(--amber)}100%{box-shadow:0 0 0 0 transparent}}
 @media (max-width:920px){main{grid-template-columns:1fr}aside{position:static}.clip{grid-template-columns:1fr}}
 </style>
 </head>
@@ -212,6 +242,20 @@ button.round:hover{background:var(--court);color:#fff;border-color:var(--court)}
   <div>
     <p class="lead">Each video below is cut down to our possessions. A clip starts several seconds before we win the ball and runs to the end of the possession. Watch it, pick what happened and who did it, then tick Confirmed. Only confirmed clips count toward the stats.</p>
     <div id="failed"></div>
+    <details class="flow" id="flow">
+      <summary><h2>Game flow</h2><span class="sub">When we scored and turned the ball over, confirmed clips only</span></summary>
+      <div class="flowbody">
+        <div class="flowctl">
+          <label>Half length <input type="number" id="halflen" min="5" max="40" step="1"> min</label>
+          <label>Group by <select id="flowbin"><option value="2">2 min</option><option value="4">4 min</option><option value="5">5 min</option></select></label>
+          <span class="spacer"></span><button type="button" id="flowpng">Export timeline PNG</button>
+        </div>
+        <div class="flowwrap"><div id="flowchart"></div><div class="flowtip" id="flowtip" hidden></div></div>
+        <div class="flowkeys"><span><i class="pt"></i>Points (bigger dot = 3-pointer)</span><span><i class="to"></i>Turnover</span><span><i class="bin"></i>Shaded columns: total in each time block</span><span><svg width="22" height="10" aria-hidden="true" style="vertical-align:-1px;margin-right:5px"><path d="M0 5H22" stroke="#1b211e" stroke-width="2" stroke-dasharray="5 4"/></svg>Running score (top = final total)</span></div>
+        <p class="flownote" id="flownote"></p>
+        <p class="flowhow" id="flowhow"></p>
+      </div>
+    </details>
     <div class="vwrap">
       <div class="foldctl" role="group" aria-label="Expand or collapse videos">
         <button type="button" id="expandall" class="round" title="Expand all videos" aria-label="Expand all videos">+</button>
@@ -808,7 +852,180 @@ function foldAll(open) {     // only the videos in the tab being shown
 }
 $("expandall").onclick = () => foldAll(true);
 $("collapseall").onclick = () => foldAll(false);
-function renderAll() { renderVideos(); renderBoard(); renderShots(); renderGame(); }
+/* ---- game flow: confirmed points and turnovers on an estimated game clock ----
+   Videos of a half are laid end to end in file order. When every video in the half has a
+   phone recording time and those times agree with the file order (no overlaps), real gaps
+   between videos are kept; otherwise each video simply follows the previous one. The
+   resulting span is fitted into the half length (only compressed when using recording
+   times, since the clock never runs faster than real time). An event is placed at the
+   end of its clip, which is when the possession ended. */
+const FLOW_THEME = {   // light: the page; dark: the combined stats PNG (both palettes checked for color-blind separation)
+  light: {bg: "#fff", pt: "#d4661a", to: "#7e4fb8", ptBin: "#f6d9c4", toBin: "#e5d9f1", ink: "#1b211e", q: "#5d6862", rule: "#d9ddd9", axis: "#1b211e"},
+  dark: {bg: "#141815", pt: "#d4661a", to: "#a77be0", ptBin: "#3d2a1d", toBin: "#2e2640", ink: "#e6ebe7", q: "#9aa69f", rule: "#2a312c", axis: "#7d8a82"}};
+const halfLen = () => Math.min(40, Math.max(5, +S.halfLen || 20));
+const flowBin = () => [2, 4, 5].includes(+S.flowBin) ? +S.flowBin : 4;
+function halfTimeline(vids) {
+  const rec = vids.map(v => v.recorded ? Date.parse(v.recorded) : NaN);
+  let clock = rec.every(t => !isNaN(t));
+  for (let i = 1; clock && i < vids.length; i++)
+    if (rec[i] < rec[i - 1] + vids[i - 1].duration * 1000 - 3000) clock = false;    // out of order or overlapping
+  const start = {}; let span;
+  if (clock) {
+    vids.forEach((v, i) => { start[v.name] = (rec[i] - rec[0]) / 1000; });
+    const last = vids[vids.length - 1];
+    span = start[last.name] + last.duration;
+    if (span > 3 * halfLen() * 60) clock = false;                                  // hours apart: not one half
+  }
+  if (!clock) { span = 0; vids.forEach(v => { start[v.name] = span; span += v.duration; }); }
+  const L = halfLen() * 60, k = clock ? Math.min(1, L / span) : L / Math.max(span, 1);
+  return {clock, toMin: (v, t) => Math.min(halfLen(), (start[v.name] + t) * k / 60)};
+}
+function flowData() {
+  const halves = [...new Set(G.videos.map(v => v.half).filter(Boolean))].sort();
+  const parts = halves.length ? halves.map(h => ({h, vids: G.videos.filter(v => v.half === h)})) : [{h: 0, vids: G.videos}];
+  const ps = Object.fromEntries(players().map(p => [p.key, p.label]));
+  return parts.map(({h, vids}) => {
+    const tl = halfTimeline(vids), ev = [];
+    vids.forEach(v => visible(v).forEach(c => {
+      const x = S.clips[key(v, c)]; if (!x || !x.done) return;
+      const pts = x.result === "2" ? 2 : x.result === "3" ? 3 : x.result === "ft" ? +(x.ftm || 0) : 0;
+      if (!pts && x.result !== "to") return;
+      const t = Math.max(c.start, Math.min(c.end, v.duration) - 1);
+      ev.push({h, v, c, k: key(v, c), m: tl.toMin(v, t), type: pts ? "pt" : "to", pts, res: x.result,
+               who: pts ? ps[x.scorer] || "" : (TO_TYPES.find(([t]) => t === x.tot) || [null, "Type not set"])[1]});
+    }));
+    ev.sort((a, b) => a.m - b.m);
+    return {h, clock: tl.clock, ev, n: vids.length};
+  });
+}
+function flowSVG(parts, {W = 1000, theme = "light", header = false} = {}) {
+  const C = FLOW_THEME[theme], forExport = header, L = halfLen(), B = flowBin(), nb = Math.ceil(L / B), gap = parts.length > 1 ? 36 : 0;
+  const m = {l: 40, r: 16, t: forExport ? 96 : 30}, pw = (W - m.l - m.r - gap * (parts.length - 1)) / parts.length;
+  const ax = m.t + 116, upH = 96, dnH = 64, H = ax + dnH + 40;
+  const bins = parts.map(p => { const b = Array.from({length: nb}, () => ({pts: 0, to: 0}));
+    p.ev.forEach(e => { const i = Math.min(nb - 1, Math.floor(e.m / B)); e.type === "pt" ? b[i].pts += e.pts : b[i].to++; }); return b; });
+  const total = parts.reduce((a, p) => a + p.ev.reduce((x, e) => x + e.pts, 0), 0); let run = 0;   // running score across halves
+  const maxP = Math.max(6, ...bins.flat().map(b => b.pts)), maxT = Math.max(3, ...bins.flat().map(b => b.to));
+  const F = `font-family="-apple-system,BlinkMacSystemFont,Helvetica Neue,Arial,sans-serif"`;
+  let g = theme === "dark" ? `<rect width="${W}" height="${H}" fill="${C.bg}"/>` : "";
+  if (header) g += `<rect width="${W}" height="${H}" fill="${C.bg}"/><text x="${m.l}" y="30" ${F} font-size="20" font-weight="600" fill="${C.ink}">${esc(G.title)}: game flow</text>
+    <text x="${m.l}" y="50" ${F} font-size="13" fill="${C.q}">Points and turnovers from confirmed clips, by estimated game time. Shaded columns: total per ${B} minutes. Dashed line: running score.</text>`;
+  parts.forEach((p, pi) => {
+    const x0 = m.l + pi * (pw + gap), X = mm => x0 + mm / L * pw;
+    g += `<text x="${x0}" y="${m.t - 10}" ${F} font-size="13" font-weight="600" fill="${C.ink}">${p.h ? halfName(p.h)[0].toUpperCase() + halfName(p.h).slice(1) : "Game"}</text>`;
+    const tp = p.ev.filter(e => e.type === "pt").reduce((a, e) => a + e.pts, 0), tt = p.ev.filter(e => e.type === "to").length;
+    g += `<text x="${x0 + pw}" y="${m.t - 10}" text-anchor="end" ${F} font-size="12" fill="${C.q}">${tp} pts · ${tt} TO</text>`;
+    bins[pi].forEach((b, i) => {             // shaded totals per block, points up, turnovers down
+      const bx = X(i * B) + 1, bw = X(Math.min(L, (i + 1) * B)) - X(i * B) - 2;
+      if (b.pts) { const hh = b.pts / maxP * upH;
+        g += `<rect x="${bx}" y="${ax - hh}" width="${bw}" height="${hh}" rx="4" fill="${C.ptBin}"/><text x="${bx + bw / 2}" y="${ax - hh - 5}" text-anchor="middle" ${F} font-size="12" font-weight="600" fill="${C.ink}">${b.pts}</text>`; }
+      if (b.to) { const hh = b.to / maxT * dnH;
+        g += `<rect x="${bx}" y="${ax}" width="${bw}" height="${hh}" rx="4" fill="${C.toBin}"/><text x="${bx + bw / 2}" y="${ax + hh + 14}" text-anchor="middle" ${F} font-size="12" font-weight="600" fill="${C.ink}">${b.to}</text>`; }
+    });
+    for (let mm = 0; mm <= L; mm += B) {      // grid and minute labels
+      g += `<line x1="${X(mm)}" x2="${X(mm)}" y1="${ax - upH - 4}" y2="${ax + dnH + 4}" stroke="${C.rule}" stroke-width="1" stroke-dasharray="${mm && mm < L ? "2 3" : ""}"/>`;
+      g += `<text x="${X(mm)}" y="${ax + dnH + 22}" text-anchor="middle" ${F} font-size="11" fill="${C.q}">${mm}′</text>`;
+    }
+    if (L % B) g += `<text x="${X(L)}" y="${ax + dnH + 22}" text-anchor="middle" ${F} font-size="11" fill="${C.q}">${L}′</text>`;
+    g += `<line x1="${x0}" x2="${x0 + pw}" y1="${ax}" y2="${ax}" stroke="${C.axis}" stroke-width="1.5"/>`;
+    if (total) {                             // running score: dashed step line, 0 at the axis, final total at the top
+      const yC = v => ax - v / total * upH, f = n => n.toFixed(1);
+      let d = `M${f(x0)} ${f(yC(run))}`;
+      p.ev.forEach(e => { if (e.pts) { d += `H${f(X(e.m))}V${f(yC(run += e.pts))}`; } });
+      d += `H${f(x0 + pw)}`;
+      g += `<path d="${d}" fill="none" stroke="${C.ink}" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round"/>`;
+      g += `<text x="${x0 + pw - 2}" y="${yC(run) - 6}" text-anchor="end" ${F} font-size="12" font-weight="600" fill="${C.ink}">${run}</text>`;
+    }
+    const rows = {pt: [], to: []};          // stack markers that would overlap
+    p.ev.forEach(e => {
+      const x = X(e.m), r = e.type === "pt" ? (e.res === "3" ? 7 : e.res === "ft" ? 4.5 : 5.5) : 5, lane = rows[e.type];
+      let row = 0; while ((lane[row] ?? -1e9) > x - 2 * r - 2) row++; lane[row] = x;
+      const y = e.type === "pt" ? ax - 10 - row * 13 : ax + 10 + row * 13;
+      e.x = x; e.y = y;
+      const hit = `<circle cx="${x}" cy="${y}" r="11" fill="transparent"/>`;
+      g += e.type === "pt"
+        ? `<g data-i="${e.i}">${hit}<circle cx="${x}" cy="${y}" r="${r}" fill="${C.pt}" stroke="${C.bg}" stroke-width="2"/></g>`
+        : `<g data-i="${e.i}">${hit}<rect x="${x - r}" y="${y - r}" width="${2 * r}" height="${2 * r}" rx="1.5" fill="${C.to}" stroke="${C.bg}" stroke-width="2" transform="rotate(45 ${x} ${y})"/></g>`;
+    });
+    if (pi && gap) g += `<line x1="${x0 - gap / 2}" x2="${x0 - gap / 2}" y1="${ax - upH - 8}" y2="${ax + dnH + 8}" stroke="${C.q}" stroke-width="1"/>`;
+  });
+  g += `<text x="${m.l - 6}" y="${ax - 8}" text-anchor="end" ${F} font-size="11" fill="${C.pt}" font-weight="600">PTS</text>
+        <text x="${m.l - 6}" y="${ax + 16}" text-anchor="end" ${F} font-size="11" fill="${C.to}" font-weight="600">TO</text>`;
+  return {svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Game flow timeline">${g}</svg>`, bins, W, H};
+}
+function flowPeaks(parts, bins, html = false) {       // "Most points: 1st half, minutes 8–12 (6 pts)."
+  const B = flowBin(), L = halfLen(), name = p => p.h ? halfName(p.h) : "the game";
+  const best = f => { let top = null, ties = 0;
+    parts.forEach((p, pi) => bins[pi].forEach((b, i) => {
+      if (b[f] && (!top || b[f] > top.n)) { top = {n: b[f], p, i}; ties = 1; } else if (top && b[f] === top.n) ties++; }));
+    return top && Object.assign(top, {ties}); };
+  const span = t => `${name(t.p)}, minutes ${t.i * B}–${Math.min(L, (t.i + 1) * B)}`;
+  const bold = x => html ? `<b>${x}</b>` : x;
+  const line = (label, t, unit) => !t ? "" : t.ties > 1
+    ? `${label}: no single peak (${t.n}${unit} in each of ${t.ties} blocks).`
+    : `${label}: ${bold(span(t))} (${t.n}${unit}).`;
+  return [line("Most points", best("pts"), " pts"), line("Most turnovers", best("to"), "")].filter(Boolean);
+}
+function numberedFlow() {
+  const parts = flowData(); let i = 0;
+  parts.forEach(p => p.ev.forEach(e => { e.i = i++; }));
+  return parts;
+}
+let FLOW = [];
+function renderFlow() {
+  const el = $("flow");
+  el.open = S.flowOpen !== false;
+  $("halflen").value = halfLen(); $("flowbin").value = flowBin();
+  const parts = numberedFlow();
+  FLOW = parts.flatMap(p => p.ev);
+  if (!FLOW.length) {
+    $("flowchart").innerHTML = `<p class="flowempty">Nothing to show yet. Confirmed clips with points or a turnover appear here on the game clock.</p>`;
+    $("flownote").textContent = ""; $("flowhow").textContent = ""; $("flowpng").disabled = true; return;
+  }
+  $("flowpng").disabled = false;
+  const {svg, bins} = flowSVG(parts);
+  $("flowchart").innerHTML = svg;
+  const L = halfLen(), name = p => p.h ? halfName(p.h) : "the game";
+  $("flownote").innerHTML = flowPeaks(parts, bins, true).join(" &nbsp; ");
+  $("flowhow").textContent = "Times are estimates. " + parts.map(p => `${p.h ? halfName(p.h)[0].toUpperCase() + halfName(p.h).slice(1) : "Game"}: ${p.clock
+    ? `from the phone's recording times of ${p.n} video${p.n === 1 ? "" : "s"}`
+    : `${p.n} video${p.n === 1 ? "" : "s"} placed back to back in file order and stretched over ${L} minutes`}.`).join(" ")
+    + " Hover a marker for details, click it to open the clip.";
+  const tip = $("flowtip"), wrap = $("flowchart").parentElement;
+  $("flowchart").querySelectorAll("[data-i]").forEach(n => {
+    const e = FLOW[+n.dataset.i];
+    n.onmouseenter = () => {
+      const s = $("flowchart").querySelector("svg"), sc = s.getBoundingClientRect().width / 1000;
+      tip.innerHTML = `<b>${e.type === "pt" ? (e.res === "ft" ? `Free throws, ${e.pts} made` : `${e.res}-pointer`) : "Turnover"}</b>${e.who ? " · " + esc(e.who) : ""}<br>~${fmt(e.m * 60)} of ${name(e)} · ${esc(e.v.name)} at ${fmt(e.c.end - 1)}`;
+      tip.hidden = false;
+      const tw = tip.offsetWidth, ww = wrap.clientWidth;
+      tip.style.left = Math.min(ww - tw / 2, Math.max(tw / 2, e.x * sc)) + "px"; tip.style.top = e.y * sc - 6 + "px";
+    };
+    n.onmouseleave = () => { tip.hidden = true; };
+    n.onclick = () => openClip(e);
+  });
+}
+function openClip(e) {
+  if (e.v.half) S.tab = e.v.half;
+  S.open[e.v.name] = true; save(); renderVideos();
+  const el = document.querySelector(`.clip[data-k="${CSS.escape(e.k)}"]`);
+  if (el) { el.scrollIntoView({behavior: "smooth", block: "center"}); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+}
+$("flow").addEventListener("toggle", () => { S.flowOpen = $("flow").open; save(); });
+$("halflen").onchange = e => { S.halfLen = Math.min(40, Math.max(5, Math.round(+e.target.value) || 20)); save(); renderFlow(); };
+$("flowbin").onchange = e => { S.flowBin = +e.target.value; save(); renderFlow(); };
+$("flowpng").onclick = () => {
+  const parts = numberedFlow();
+  const {svg, W, H} = flowSVG(parts, {header: true}), img = new Image(), sc = 2;
+  img.onload = () => {
+    const c = document.createElement("canvas"); c.width = W * sc; c.height = H * sc;
+    const x = c.getContext("2d"); x.scale(sc, sc); x.drawImage(img, 0, 0);
+    c.toBlob(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = G.title + "_game_flow.png"; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000); });
+  };
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+};
+function renderAll() { renderVideos(); renderBoard(); renderShots(); renderGame(); renderFlow(); }
 
 function download(name, text, type) {
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], {type}));
@@ -829,9 +1046,21 @@ $("csv").onclick = () => {
   rs.forEach(([label, s]) => lines.push([`"${label}"`, ...F.map(f => s[f])].join(",")));
   const to = teamTO();
   lines.push("", "Team turnovers,Count", ...TO_TYPES.map(([t, l]) => `"${l}",${to.by[t]}`), `"Total",${to.total}`);
+  const fparts = numberedFlow(), B = flowBin(), L = halfLen(), hn = h => h ? halfName(h) : "Game";
+  if (fparts.some(p => p.ev.length)) {
+    lines.push("", `"Game flow, estimated game time (half = ${L} min)"`, "Half,Minute,Event,Points,Player or turnover type,Video,Time in video");
+    fparts.forEach(p => p.ev.forEach(e => lines.push([q(hn(p.h)), e.m.toFixed(1),
+      q(e.type === "pt" ? (e.res === "ft" ? "Free throws" : e.res + "-pointer") : "Turnover"), e.pts, q(e.who), q(e.v.name), q(fmt(e.c.end - 1))].join(","))));
+    lines.push("", `"Game flow per ${B} minutes"`, "Half,Minutes,Points,Turnovers");
+    fparts.forEach(p => { const nb = Math.ceil(L / B);
+      for (let i = 0; i < nb; i++) {
+        const inb = p.ev.filter(e => Math.min(nb - 1, Math.floor(e.m / B)) === i);
+        lines.push([q(hn(p.h)), q(`${i * B}-${Math.min(L, (i + 1) * B)}`), inb.reduce((x, e) => x + e.pts, 0), inb.filter(e => e.type === "to").length].join(","));
+      } });
+  }
   download(G.title + "_stats.csv", "﻿" + lines.join("\n"), "text/csv");
 };
-function statsPNG() {
+function statsPNG(flow = null) {      // flow: {img, h, peaks} drawn between turnovers and the heat map
   const T = stats(), ps = players(), F = ["pts", "reb", "ast", "stl", "blk"], H = ["PTS", "REB", "AST", "STL", "BLK"];
   const rows = ps.map(p => ({label: p.label, s: T[p.key] || {pts: 0, reb: 0, ast: 0, stl: 0, blk: 0}}));
   const tot = {}; F.forEach(f => tot[f] = rows.reduce((a, r) => a + r.s[f], 0));
@@ -841,7 +1070,8 @@ function statsPNG() {
   const g = gi(), withGame = hasGame(g), gus = finalScore(g, "us"), gop = finalScore(g, "opp");
   const W = 760, pad = 36, rowH = 46, top = 150 + (withGame ? 128 : 0), colW = 92, nameW = W - pad * 2 - colW * 5;
   const to = teamTO(), toTop = top + rowH * (rows.length + 1) + 60, toH = 52 + 30 * Math.ceil(TO_TYPES.length / 2);
-  const shots = shotData(), sc = 12, shotTop = toTop + toH + 64;
+  const flowTop = toTop + toH + 64, flowH = flow ? flow.h + 34 + 22 * flow.peaks.length : 0;
+  const shots = shotData(), sc = 12, shotTop = flowTop + (flow ? flowH + 64 : 0);
   const Hh = shotTop + DRAW_D * sc + 140, k = 2;
   const cv = document.createElement("canvas"); cv.width = W * k; cv.height = Hh * k;
   const c = cv.getContext("2d"); c.scale(k, k);
@@ -908,6 +1138,18 @@ function statsPNG() {
     if (n) { c.fillStyle = "#8fa39a"; c.beginPath(); c.roundRect(bx, y - 9, Math.max(4, bw * n / mxTo), 7, 3.5); c.fill(); }
     c.textAlign = "right"; c.font = `600 20px ${digits}`; c.fillStyle = n ? "#e6ebe7" : "#5d6862"; c.fillText(String(n), x + half, y + 1);
   });
+  // game flow: points and turnovers on the estimated game clock
+  if (flow) {
+    c.textAlign = "left"; c.fillStyle = "#e6ebe7"; c.font = `600 18px ${text}`; c.fillText("Game flow", pad, flowTop);
+    c.textAlign = "right"; c.font = `14px ${text}`;
+    const parts = [["#e6ebe7", "- - running score"], ["#a77be0", "◆ turnovers"], ["#d4661a", "● points"]];
+    let xr = W - pad;
+    c.fillStyle = "#9aa69f"; const tail = `shaded: per ${flowBin()} min`; c.fillText(tail, xr, flowTop); xr -= c.measureText(tail).width + 14;
+    parts.forEach(([col, lab]) => { c.fillStyle = col; c.fillText(lab, xr, flowTop); xr -= c.measureText(lab).width + 14; });
+    c.drawImage(flow.img, pad, flowTop + 12, W - pad * 2, flow.h);
+    c.textAlign = "left"; c.fillStyle = "#cfd6d1"; c.font = `15px ${text}`;
+    flow.peaks.forEach((t, i) => c.fillText(t, pad, flowTop + 12 + flow.h + 24 + 22 * i));
+  }
   // team shot heat map under the table
   c.textAlign = "left"; c.fillStyle = "#e6ebe7"; c.font = `600 18px ${text}`; c.fillText($("shotwho").value ? `${shots.label}: shot heat map` : "Team shot heat map", pad, shotTop - 26);
   c.fillStyle = "#9aa69f"; c.font = `14px ${text}`; c.textAlign = "right";
@@ -923,9 +1165,17 @@ function statsPNG() {
   return cv;
 }
 $("png").onclick = () => {
-  const a = document.createElement("a");
-  a.href = statsPNG().toDataURL("image/png");
-  a.download = G.title + "_stats.png"; a.click();
+  const done = flow => {
+    const a = document.createElement("a");
+    a.href = statsPNG(flow).toDataURL("image/png");
+    a.download = G.title + "_stats.png"; a.click();
+  };
+  const parts = numberedFlow();
+  if (!parts.some(p => p.ev.length)) return done(null);
+  const W = 760 - 36 * 2, {svg, bins, H} = flowSVG(parts, {W, theme: "dark"}), img = new Image();
+  img.onload = () => done({img, h: H, peaks: flowPeaks(parts, bins)});
+  img.onerror = () => done(null);
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
 };
 $("save").onclick = () => download(G.title + "_review.json", JSON.stringify(S, null, 2), "application/json");
 $("load").onchange = e => {

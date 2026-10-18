@@ -131,6 +131,27 @@ def process_video(log, video, out, team, minutes, roster="", accurate=False):
             "review": f"{os.path.basename(out)}/review/index.html" if minutes else None}
 
 
+def recorded_at(video):
+    """When the phone started recording (ISO string, UTC), from the file's metadata, or None.
+    iPhone .MOV files carry com.apple.quicktime.creationdate; exported .mp4 files often only
+    have creation_time, which may be the export time. The page checks the times are usable."""
+    try:
+        out = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
+                              "format_tags=com.apple.quicktime.creationdate,creation_time",
+                              "-of", "json", video], capture_output=True, text=True, timeout=30).stdout
+        tags = json.loads(out).get("format", {}).get("tags", {})
+        t = tags.get("com.apple.quicktime.creationdate") or tags.get("creation_time")
+        if not t:
+            return None
+        t = re.sub(r"([+-]\d\d)(\d\d)$", r"\1:\2", t.strip().replace("Z", "+00:00"))   # -0800 -> -08:00
+        d = datetime.datetime.fromisoformat(t)
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=datetime.timezone.utc)
+        return d.astimezone(datetime.timezone.utc).isoformat()
+    except Exception:
+        return None
+
+
 def half_of(name):
     """1 or 2 when a subfolder name marks a half ("1st_half", "H1", "first half", "上半场"), else None."""
     n = name.lower().replace("_", " ").replace("-", " ")
@@ -295,6 +316,7 @@ def main():
         try:
             r = process_video(log, os.path.join(folder, v), out, team, not a.no_minutes, roster, a.accurate)
             r["half"] = half
+            r["recorded"] = recorded_at(os.path.join(folder, v))
             if dup:
                 r["name"] = v
             results.append(r)

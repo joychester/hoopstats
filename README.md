@@ -12,7 +12,7 @@ Turn phone videos of a youth basketball game into a box score, shot chart and tu
 
 You film the game on a phone the usual way, following the ball. HoopStats does the tedious part, and you confirm what happened in each short clip.
 
-- **Finds our possessions.** It detects every player, tracks them while the camera pans, and keeps only our team (black or white jersey). Referees, fans and adults on the sideline are filtered out. Because the camera follows the ball, a swing to the half we attack means we have the ball. Each video is cut down to clips of our possessions, starting a few seconds before we win the ball.
+- **Finds our possessions.** It detects every player, tracks them while the camera pans, and keeps only our team (black or white jersey). Referees, fans and adults on the sideline are filtered out. Because the camera follows the ball, a swing to the half we attack means we have the ball. Each video is cut down to clips of our possessions, starting a few seconds before we win the ball. A fast break still under way when a video ends is kept as a clip too.
 - **Works out the attack direction.** Defenders stand between their opponent and the basket, so our team sits closer to the basket we defend. The direction is decided per half, and you can flip it on the page.
 - **You confirm each clip** in a summary page:
   - how we got the ball: defensive rebound, steal, block, inbound;
@@ -24,8 +24,10 @@ You film the game on a phone the usual way, following the ball. HoopStats does t
   - Click where each made or missed shot was taken, and where the assist pass came from. Long passes from the backcourt are supported.
   - View the result as a heat map of made shots (red) or missed shots (blue), or a hot/cold map of all shots. On that map, color shows make % against the team average and color strength shows the number of attempts.
   - Made and attempted shots, and shooting %, are counted by zone: paint, mid-range and 3PT.
+- **Game flow.** A timeline of each half shows when we scored and when we turned the ball over. Shaded columns total each 2, 4 or 5 minutes, and a dashed line shows the running score. The page names the stretch with the most points and the one with the most turnovers. Click a marker to jump to its clip.
+  - Times are estimated. Videos in a half are placed in file order. When the phone's recording times are available and agree with that order, the real gaps between videos are kept. Otherwise the videos are laid end to end and stretched over the half. The half length is 20 minutes by default and can be changed on the page.
 - **Game info.** Team names, jersey colors (one or two colors per team), date, location, and the score by half.
-- **Export.** One PNG with the score, box score, turnovers and heat map, ready to share with coaches and parents. There is also a CSV and a separate shot-chart PNG for any player.
+- **Export.** One PNG with the score, box score, turnovers, game flow and heat map, ready to share with coaches and parents. The CSV has the same tables plus every point and turnover with its estimated game time. The shot chart and the game flow can also be exported as separate PNGs.
 - **Minutes (optional).** Clips of the same player are grouped by appearance (OSNet). You name each group and minutes played are computed.
 
 ## Install (once)
@@ -100,6 +102,7 @@ Your review is saved in the browser. Use **Save review** to keep a copy as a fil
 - The detector is a general model, not trained on basketball. Players are found reliably, but the ball is found in only about 10% of frames. That is why shots, scorers and locations come from you.
 - Our jersey numbers are too small to read in wide phone video, so identities come from you.
 - Clips rely on the camera following the ball. When a video starts, the camera often lags behind a change of possession, so a very short first segment is skipped.
+- Game-flow times are estimates from the video order and lengths, or from the phone's recording times. Without usable recording times, stretches you did not film are left out, so events after a long gap can appear earlier than they happened.
 - Each clip records one result, so a miss followed by an offensive rebound and a make is recorded as the make plus the offensive rebound.
 - Inference uses the CPU by default. Set `HOOPSTATS_COREML=1` to try Core ML.
 
