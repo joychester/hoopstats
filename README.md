@@ -22,7 +22,7 @@ You film the game on a phone the usual way, following the ball. HoopStats does t
   - how we got the ball: defensive rebound, steal, block, inbound;
   - the result: made 2 or 3, free throws, missed shot or turnover;
   - who scored, assisted or grabbed the offensive rebound.
-- **Box score.** Points, rebounds, assists, steals and blocks per player, plus a Team Total row. Each column's leader is highlighted.
+- **Box score.** Points, field goals made / attempted (2s and 3s, free throws not counted), rebounds, assists, steals and blocks per player, plus a Team Total row. Each column's leader is highlighted.
 - **Team turnovers by type.** Bad pass, out of bounds, offensive foul, ball handling, traveling, moving screen, technical foul or other.
 - **Shot chart.**
   - Click where each made or missed shot was taken, and where the assist pass came from. Long passes from the backcourt are supported.

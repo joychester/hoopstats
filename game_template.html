@@ -32,7 +32,9 @@ aside{position:sticky;top:16px;display:grid;gap:16px}
 .board td.zero{color:var(--amber-dim)}
 .board td.lead span{display:inline-block;min-width:1.4em;text-align:center;padding:3px 5px 1px;border-radius:5px;background:var(--amber);color:#1b1305}
 .board table{table-layout:fixed}
-.board th:not(:first-child),.board td:not(:first-child){width:13%}
+.board th:not(:first-child),.board td:not(:first-child){width:10%}
+.board th.fg,.board td.fg{width:21%;padding-left:12px}
+.board td.fg{font-size:21px;letter-spacing:.01em}
 .board tr.total td{color:var(--total);border-top:0}
 .board tr.total td.zero{color:var(--total)}
 .board tr.total td:first-child{color:var(--total);font-weight:600}
@@ -288,7 +290,7 @@ button.round.rate[aria-pressed=true]{background:var(--court);color:#fff;border-c
       <div class="bhead"><h2>Team stats, confirmed clips only</h2><button type="button" id="edit">Edit players</button></div>
       <div id="stats">
         <table id="board"></table>
-        <div class="legend"><b></b>Team leader in that column</div>
+        <div class="legend"><b></b>Team leader in that column · FG = made / attempted 2s and 3s, no free throws</div>
       </div>
       <div id="editor" hidden></div>
       <div class="topanel" id="topanel"></div>
@@ -561,8 +563,11 @@ function teamTO() {          // team turnovers by type, confirmed clips only
   }));
   return {total, by};
 }
+const ZERO = {pts: 0, fgm: 0, fga: 0, reb: 0, ast: 0, stl: 0, blk: 0};
+const fgText = s => `${s.fgm}/${s.fga}`;                       // field goals made / attempted, 2s and 3s only
+const fgPct = s => s.fga ? Math.round(100 * s.fgm / s.fga) + "%" : "";
 function stats() {
-  const T = {}, add = (p, f, n = 1) => { if (!p) return; T[p] = T[p] || {pts: 0, reb: 0, ast: 0, stl: 0, blk: 0}; T[p][f] += n; };
+  const T = {}, add = (p, f, n = 1) => { if (!p) return; T[p] = T[p] || {...ZERO}; T[p][f] += n; };
   G.videos.forEach(v => visible(v).forEach(c => {
     const x = S.clips[key(v, c)]; if (!x || !x.done) return;
     if (x.how === "dreb") add(x.who, "reb");
@@ -571,7 +576,8 @@ function stats() {
     if (x.result === "2") add(x.scorer, "pts", 2);
     if (x.result === "3") add(x.scorer, "pts", 3);
     if (x.result === "ft") add(x.scorer, "pts", +(x.ftm || 0));
-    if (x.result === "2" || x.result === "3") add(x.assist, "ast");
+    if (x.result === "2" || x.result === "3") { add(x.scorer, "fgm"); add(x.scorer, "fga"); add(x.assist, "ast"); }
+    if (x.result === "miss") add(x.scorer, "fga");        // free throws are not field goals
     add(x.oreb, "reb");
   }));
   return T;
@@ -583,14 +589,16 @@ function leaders(list) {
 }
 function renderBoard() {
   const T = stats(), rows = players();
-  const Z = {pts: 0, reb: 0, ast: 0, stl: 0, blk: 0};
+  const Z = {...ZERO};
   rows.forEach(p => { T[p.key] = T[p.key] || Z; });
-  const F = ["pts", "reb", "ast", "stl", "blk"], lead = leaders(rows.map(p => T[p.key]));
+  const F = ["pts", "fg", "reb", "ast", "stl", "blk"], lead = leaders(rows.map(p => T[p.key]));
+  const tot = {...ZERO}; Object.keys(ZERO).forEach(f => { tot[f] = rows.reduce((a, p) => a + T[p.key][f], 0); });
+  const fgCell = s => `<td class="fg${s.fga ? "" : " zero"}" title="${s.fga ? `${fgPct(s)} of field goals (2s and 3s)` : "No field goal attempts"}">${fgText(s)}</td>`;
   const cell = (n, f) => lead[f] && n === lead[f] ? `<td class="lead"><span>${n}</span></td>` : `<td class="${n ? "" : "zero"}">${n}</td>`;
   $("board").innerHTML = rows.length
-    ? `<tr><th>Player</th><th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th></tr>` +
-      `<tr class="total"><td>Team Total</td>${F.map(f => { const n = rows.reduce((a, p) => a + T[p.key][f], 0); return `<td class="${n ? "" : "zero"}">${n}</td>`; }).join("")}</tr>` +
-      rows.map(p => { const s = T[p.key]; return `<tr><td>${esc(p.label)}</td>${F.map(f => cell(s[f], f)).join("")}</tr>`; }).join("")
+    ? `<tr><th>Player</th><th>PTS</th><th class="fg" title="Field goals made / attempted, 2s and 3s, no free throws">FG</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th></tr>` +
+      `<tr class="total"><td>Team Total</td>${F.map(f => f === "fg" ? fgCell(tot) : `<td class="${tot[f] ? "" : "zero"}">${tot[f]}</td>`).join("")}</tr>` +
+      rows.map(p => { const s = T[p.key]; return `<tr><td>${esc(p.label)}</td>${F.map(f => f === "fg" ? fgCell(s) : cell(s[f], f)).join("")}</tr>`; }).join("")
     : `<tr><td class="empty">No players yet. Use Edit players to add them.</td></tr>`;
   let all = 0, done = 0;
   G.videos.forEach(v => visible(v).forEach(c => { all++; if ((S.clips[key(v, c)] || {}).done) done++; }));
@@ -1066,11 +1074,13 @@ $("csv").onclick = () => {
     lines.push([q(g.opp || "Opponent"), jname(g.oppColor, g.oppColor2), g.opp1, g.opp2, finalScore(g, "opp") ?? ""].join(","));
     lines.push(["Date", q(g.date)].join(","), ["Location", q(g.venue)].join(","), "");
   }
-  lines.push("Player,PTS,REB,AST,STL,BLK");
-  const rs = players().map(p => [p.label, T[p.key] || {pts: 0, reb: 0, ast: 0, stl: 0, blk: 0}]);
-  const F = ["pts", "reb", "ast", "stl", "blk"];
-  lines.push(["\"Team Total\"", ...F.map(f => rs.reduce((a, [, s]) => a + s[f], 0))].join(","));
-  rs.forEach(([label, s]) => lines.push([`"${label}"`, ...F.map(f => s[f])].join(",")));
+  lines.push("Player,PTS,FGM,FGA,FG%,REB,AST,STL,BLK");
+  const rs = players().map(p => [p.label, T[p.key] || {...ZERO}]);
+  const F = ["pts", "fgm", "fga", "pct", "reb", "ast", "stl", "blk"], tot = {...ZERO};
+  Object.keys(ZERO).forEach(f => { tot[f] = rs.reduce((a, [, s]) => a + s[f], 0); });
+  const val = (s, f) => f === "pct" ? fgPct(s) : s[f];
+  lines.push(["\"Team Total\"", ...F.map(f => val(tot, f))].join(","));
+  rs.forEach(([label, s]) => lines.push([`"${label}"`, ...F.map(f => val(s, f))].join(",")));
   const to = teamTO();
   lines.push("", "Team turnovers,Count", ...TO_TYPES.map(([t, l]) => `"${l}",${to.by[t]}`), `"Total",${to.total}`);
   const fparts = numberedFlow(), B = flowBin(), L = halfLen(), hn = h => h ? halfName(h) : "Game";
@@ -1088,14 +1098,15 @@ $("csv").onclick = () => {
   download(G.title + "_stats.csv", "﻿" + lines.join("\n"), "text/csv");
 };
 function statsPNG(flow = null) {      // flow: {img, h, peaks} drawn between turnovers and the heat map
-  const T = stats(), ps = players(), F = ["pts", "reb", "ast", "stl", "blk"], H = ["PTS", "REB", "AST", "STL", "BLK"];
-  const rows = ps.map(p => ({label: p.label, s: T[p.key] || {pts: 0, reb: 0, ast: 0, stl: 0, blk: 0}}));
-  const tot = {}; F.forEach(f => tot[f] = rows.reduce((a, r) => a + r.s[f], 0));
+  const T = stats(), ps = players(), F = ["pts", "fg", "reb", "ast", "stl", "blk"], H = ["PTS", "FG", "REB", "AST", "STL", "BLK"];
+  const rows = ps.map(p => ({label: p.label, s: T[p.key] || {...ZERO}}));
+  const tot = {...ZERO}; Object.keys(ZERO).forEach(f => tot[f] = rows.reduce((a, r) => a + r.s[f], 0));
   const lead = leaders(rows.map(r => r.s));
   let all = 0, done = 0;
   G.videos.forEach(v => visible(v).forEach(c => { all++; if ((S.clips[key(v, c)] || {}).done) done++; }));
   const g = gi(), withGame = hasGame(g), gus = finalScore(g, "us"), gop = finalScore(g, "opp");
-  const W = 760, pad = 36, rowH = 46, top = 150 + (withGame ? 128 : 0), colW = 92, nameW = W - pad * 2 - colW * 5;
+  const W = 760, pad = 36, rowH = 46, top = 150 + (withGame ? 128 : 0), colW = 78, fgW = 104, nameW = W - pad * 2 - colW * 5 - fgW;
+  const colWs = F.map(f => f === "fg" ? fgW : colW), colR = i => pad + nameW + colWs.slice(0, i + 1).reduce((a, b) => a + b, 0);   // right edge of column i
   const to = teamTO(), toTop = top + rowH * (rows.length + 1) + 60, toH = 52 + 30 * Math.ceil(TO_TYPES.length / 2);
   const flowTop = toTop + toH + 64, flowH = flow ? flow.h + 34 + 22 * flow.peaks.length : 0;
   const shots = shotData(), sc = 12, shotTop = flowTop + (flow ? flowH + 64 : 0);
@@ -1133,14 +1144,15 @@ function statsPNG(flow = null) {      // flow: {img, h, peaks} drawn between tur
   const y0 = top - 20;
   c.fillStyle = "#7d8a82"; c.font = `13px ${text}`;
   c.textAlign = "left"; c.fillText("PLAYER", pad, y0);
-  c.textAlign = "right"; H.forEach((h, i) => c.fillText(h, pad + nameW + colW * (i + 1), y0));
+  c.textAlign = "right"; H.forEach((h, i) => c.fillText(h, colR(i), y0));
   const line = y => { c.strokeStyle = "#2a312c"; c.lineWidth = 1; c.beginPath(); c.moveTo(pad, y); c.lineTo(W - pad, y); c.stroke(); };
   const drawRow = (label, s, y, bold) => {
     line(y - rowH + 12);
     c.textAlign = "left"; c.fillStyle = bold ? "#4cc38a" : "#e6ebe7"; c.font = `${bold ? 600 : 400} 18px ${text}`; c.fillText(label, pad, y);
     c.textAlign = "right"; c.font = `600 32px ${digits}`;
     F.forEach((f, i) => {
-      const xr = pad + nameW + colW * (i + 1), v = String(s[f]);
+      const xr = colR(i), v = f === "fg" ? fgText(s) : String(s[f]);
+      if (f === "fg") { c.font = `600 28px ${digits}`; c.fillStyle = bold ? "#4cc38a" : s.fga ? "#ffb21e" : "#5a4313"; c.fillText(v, xr, y + 1); c.font = `600 32px ${digits}`; return; }
       if (bold) { c.fillStyle = "#4cc38a"; c.fillText(v, xr, y + 2); }
       else if (lead[f] && s[f] === lead[f]) {
         const w = Math.max(34, c.measureText(v).width + 16);
@@ -1188,7 +1200,7 @@ function statsPNG(flow = null) {      // flow: {img, h, peaks} drawn between tur
   c.fillStyle = gr; c.fillRect(gx, shotTop - 37, 70, 11);
   drawShotBlock(c, (W - 50 * sc) / 2, shotTop, sc, shots, true);
   c.textAlign = "left"; c.fillStyle = "#5d6862"; c.font = `12px ${text}`;
-  c.fillText("Confirmed clips only. Highlighted: team leader in each column. Heat map: basket at the top. Made with HoopStats.", pad, Hh - 24);
+  c.fillText("Confirmed clips only. FG: made / attempted 2s and 3s, no free throws. Highlighted: team leader. Heat map: basket at the top.", pad, Hh - 24);
   return cv;
 }
 $("png").onclick = () => {
