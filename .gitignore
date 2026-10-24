@@ -34,6 +34,7 @@ eval/game*/
 *_review.json
 game_stats*.json
 *_game_stats.json
+*_share_*.zip
 *_stats.csv
 
 # Screenshots used in README (names, teams and location blurred; the game flow shows no names)

@@ -219,7 +219,8 @@ header .savestat{margin-left:auto;display:inline-flex;align-items:center;gap:7px
 .savestat[data-s=pending] i,.savestat[data-s=saving] i,button.round.save[data-s=pending] .dot,button.round.save[data-s=saving] .dot{background:#f0a35e}
 .savestat[data-s=error]{background:#7a1f1b;border-color:#e0605a;color:#fff}
 .savestat[data-s=error] i,button.round.save[data-s=error] .dot{background:#ff6b63}
-.savestat[data-s=readonly]{color:#cfd6d1}
+.savestat[data-s=readonly],.savestat[data-s=shared]{color:#cfd6d1}
+body.shared #savebtn,body.shared #share,body.shared #export,body.shared label[for=importfile]{display:none}
 button.round.save{position:relative}
 button.round.save svg{width:18px;height:18px}
 button.round.save .dot{position:absolute;top:-2px;right:-2px;width:11px;height:11px;border:2px solid var(--paper)}
@@ -313,6 +314,7 @@ button.round.rate[aria-pressed=true]{background:var(--court);color:#fff;border-c
       <div class="actions">
         <button class="primary" id="png">Export PNG</button>
         <button id="csv">Export CSV</button>
+        <button id="share">Download share zip</button>
         <button id="export">Export game_stats.json</button>
         <label class="btn" for="importfile">Import game_stats.json</label>
         <input id="importfile" type="file" accept="application/json,.json" hidden>
@@ -339,8 +341,10 @@ button.round.rate[aria-pressed=true]{background:var(--court);color:#fff;border-c
 <script src="data.js"></script>
 <script>
 const G = window.GAME_DATA, $ = id => document.getElementById(id);
-const KEY = "hoopstats-game-v2:" + G.title;
+const SHARED = window.SHARED_REVIEW || null;     // set in a copy unpacked from a share zip
+const KEY = SHARED ? `hoopstats-shared:${G.title}:${SHARED.exported}` : "hoopstats-game-v2:" + G.title;
 let S = {roster: G.roster || "", dir: {}, clips: {}, open: {}};
+if (SHARED) Object.assign(S, SHARED.data || {});
 try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (e) {}
 let afterSave = () => {};          // set by the game_stats.json saver below
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} afterSave(); };
@@ -1346,7 +1350,7 @@ const DATA_KEYS = ["roster", "dir", "clips", "game", "halfLen"];
 const SYNC_KEY = KEY + ":sync", SAVE_DELAY = 2000, RETRY_DELAY = 5000, STATS_FILE = "game_stats.json";
 const dataOf = st => Object.fromEntries(DATA_KEYS.filter(k => st[k] !== undefined).map(k => [k, st[k]]));
 const docOf = data => ({format: "hoopstats-game-stats", version: 1, game: G.title, saved: new Date().toISOString(), data});
-const SV = {mode: /^https?:$/.test(location.protocol) ? "connecting" : "readonly", state: "readonly",
+const SV = {mode: SHARED ? "shared" : /^https?:$/.test(location.protocol) ? "connecting" : "readonly", state: "readonly",
             last: null, timer: null, inflight: false, again: false, sent: null, err: "", note: ""};
 const getSync = () => { try { return JSON.parse(localStorage.getItem(SYNC_KEY) || "null"); } catch (e) { return null; } };
 const setSync = v => { try { localStorage.setItem(SYNC_KEY, JSON.stringify(v)); } catch (e) {} };
@@ -1354,19 +1358,21 @@ const hhmm = d => d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})
 const confirmedIn = d => Object.values((d && d.clips) || {}).filter(x => x && x.done).length;
 
 function renderSave() {
-  const st = SV.mode === "server" ? SV.state : SV.mode === "connecting" ? "pending" : "readonly";
+  const st = SV.mode === "server" ? SV.state : SV.mode === "connecting" ? "pending" : SV.mode === "shared" ? "shared" : "readonly";
   const text = {
     saved: SV.last ? `Saved to ${STATS_FILE} · ${hhmm(SV.last)}` : `Saved to ${STATS_FILE}`,
     pending: SV.mode === "connecting" ? "Connecting…" : "Unsaved changes · saving in 2 s",
     saving: "Saving…",
     error: "Not saved · retrying",
-    readonly: "Not saving to a file · open with serve.py"}[st];
+    readonly: "Not saving to a file · open with serve.py",
+    shared: `Shared copy · data from ${SHARED && SHARED.exported}`}[st];
   const tip = {
     saved: `All changes are in ${STATS_FILE} in the game folder${SV.last ? ` (last saved ${SV.last.toLocaleTimeString()})` : ""}. Click to save now.`,
     pending: "Changes are saved 2 seconds after your last edit. Click to save now.",
     saving: `Writing ${STATS_FILE}…`,
     error: `Could not save ${STATS_FILE}: ${SV.err || "the server did not answer"}. Retrying every few seconds; your changes are kept in this browser meanwhile. Is serve.py still running?`,
-    readonly: `This page was opened as a file, so changes stay in this browser only. To save them to ${STATS_FILE} in the game folder, run: python serve.py <game folder>`}[st];
+    readonly: `This page was opened as a file, so changes stay in this browser only. To save them to ${STATS_FILE} in the game folder, run: python serve.py <game folder>`,
+    shared: "A read-only copy shared from HoopStats. Changes you make here stay in this browser only."}[st];
   const pill = $("savestat"), btn = $("savebtn");
   pill.dataset.s = st; pill.querySelector("span").textContent = text; pill.title = tip;
   btn.dataset.s = st; btn.title = tip; btn.setAttribute("aria-label", st === "readonly" ? "Saving to a file is off" : "Save now");
@@ -1496,6 +1502,39 @@ $("importfile").onchange = async e => {
     SV.note = `Imported ${f.name} into this browser. Open the page with serve.py to save it to ${STATS_FILE}.`;
   }
   renderSave();
+};
+
+
+/* ---- share zip: the page, the review and every confirmed clip at 640 px, packed by serve.py ---- */
+if (SHARED) {
+  document.body.classList.add("shared");
+  document.querySelector(".lead").textContent = `A shared copy of the review of ${G.title}, made ${SHARED.exported}. Each video lists its confirmed clips; play them, browse the stats and charts. Anything you change stays in this browser only.`;
+}
+$("share").onclick = async () => {
+  if (SV.mode !== "server")
+    return alert("Packing a share zip needs the page opened by run_game.py or serve.py, which can write the zip into the game folder.\n\nRun in Terminal:  python serve.py <game folder>");
+  const btn = $("share"), label = btn.textContent;
+  if (btn.disabled) return;
+  const n = G.videos.reduce((a, v) => a + visible(v).filter(c => (S.clips[key(v, c)] || {}).done).length, 0);
+  if (!n && !confirm("No clips are confirmed yet. Pack the page without any clips?")) return;
+  btn.disabled = true; btn.textContent = "Packing…"; SV.note = ""; renderSave();
+  try {
+    await flush();
+    const r = await fetch("api/share", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(docOf(dataOf(S)))});
+    const res = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(res.error || `${r.status} ${r.statusText}`);
+    for (;;) {
+      await new Promise(ok => setTimeout(ok, 700));
+      const st = await (await fetch("api/share/status?job=" + res.job, {cache: "no-store"})).json();
+      if (st.state === "running") { btn.textContent = st.total ? `Packing clips ${st.done} / ${st.total}…` : "Packing…"; continue; }
+      if (st.state !== "done") throw new Error(st.error || "packing failed");
+      const a = document.createElement("a");
+      a.href = "api/share/download?job=" + res.job; a.download = st.file; document.body.appendChild(a); a.click(); a.remove();
+      SV.note = `Saved ${st.file} (${Math.max(1, Math.round(st.size / 1e6))} MB, ${st.total} clips) in the game folder and downloaded it. It shows youth players: share it privately with the team.`;
+      break;
+    }
+  } catch (e) { alert(`Could not pack the share zip: ${(e && e.message) || e}`); }
+  btn.disabled = false; btn.textContent = label; renderSave();
 };
 
 renderAll();

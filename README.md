@@ -97,6 +97,10 @@ Opened by `run_game.py`, or later with `python serve.py <game folder>`, the page
 - **Export game_stats.json** downloads a copy. **Import game_stats.json** replaces the game's file with one you pick; the old file is kept as `game_stats.<date>_<time>.json`.
 - Running `run_game.py` again never touches `game_stats.json`.
 
+### Share with the team
+
+**Download share zip** packs the game for the team: the summary page, your review and every confirmed clip, re-encoded to 640 px wide (about 0.5-0.8 MB a clip). Unconfirmed clips, original videos, detection files and logs are left out. The zip is also saved in the game folder. Whoever unzips it double-clicks `summary.html` and sees the same stats, charts and clips, offline, as a read-only copy. The clips show youth players, so share the zip privately. For phones, the Export PNG image is easier to view.
+
 ## Pipeline
 
 | Step | File | What it does |
@@ -108,6 +112,7 @@ Opened by `run_game.py`, or later with `python serve.py <game folder>`, the page
 | 5 | `export_review.py`, `review_template.html` | Minutes review page |
 | 6 | `run_game.py`, `game_template.html` | Batch run for one game folder and the summary page |
 | 7 | `serve.py` | Local server for the summary page that saves the review to `game_stats.json` |
+| 8 | `share.py` | Packs the share zip (also runs on its own: `python share.py <game folder>`) |
 
 `run.py` still processes a single video. `eval/` holds the evaluation scripts used to tune tracking and grouping.
 

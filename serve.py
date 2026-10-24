@@ -17,6 +17,7 @@ import shutil
 import socket
 import sys
 import threading
+import uuid
 import webbrowser
 
 OUT_DIR = "hoopstats_output"
@@ -56,6 +57,19 @@ def make_handler(game_folder):
     out = os.path.join(game_folder, OUT_DIR)
     stats = os.path.join(game_folder, STATS)
     lock = threading.Lock()
+    jobs = {}                                   # share zips being packed: id -> status
+
+    def run_share(job, data):
+        from share import build_share
+        def progress(done, total):
+            job.update(done=done, total=total)
+        try:
+            path = build_share(game_folder, data, progress)
+            job.update(state="done", file=os.path.basename(path), path=path, size=os.path.getsize(path))
+            print(f"Share zip saved: {path} ({job['size'] / 1e6:.0f} MB)", flush=True)
+        except Exception as e:
+            job.update(state="error", error=str(e))
+            print(f"Share zip failed: {e}", flush=True)
 
     class Handler(http.server.SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
@@ -94,7 +108,34 @@ def make_handler(game_folder):
                 self.send_header("Cache-Control", "no-cache")
             super().end_headers()
 
+        def query(self):
+            q = self.path.split("?", 1)[1] if "?" in self.path else ""
+            return dict(kv.split("=", 1) for kv in q.split("&") if "=" in kv)
+
         def do_GET(self):
+            route = self.path.split("?")[0]
+            if route in ("/api/share/status", "/api/share/download"):
+                if not self.local_request():
+                    return self.send_json(403, {"error": "forbidden"})
+                job = jobs.get(self.query().get("job", ""))
+                if not job:
+                    return self.send_json(404, {"error": "unknown job"})
+                if route == "/api/share/status":
+                    return self.send_json(200, {k: v for k, v in job.items() if k != "path"})
+                if job.get("state") != "done":
+                    return self.send_json(409, {"error": "not ready"})
+                size = os.path.getsize(job["path"])
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Length", str(size))
+                self.send_header("Content-Disposition", f'attachment; filename="{job["file"]}"')
+                self.end_headers()
+                with open(job["path"], "rb") as f:
+                    try:
+                        shutil.copyfileobj(f, self.wfile, 1 << 16)
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
+                return
             if self.path.split("?")[0] == "/api/state":
                 if not self.local_request():
                     return self.send_json(403, {"error": "forbidden"})
@@ -114,6 +155,21 @@ def make_handler(game_folder):
 
         def do_POST(self):
             path = self.path.split("?")[0]
+            if path == "/api/share":
+                if not self.local_request():
+                    return self.send_json(403, {"error": "forbidden"})
+                try:
+                    doc = self.read_json()
+                except Exception as e:
+                    return self.send_json(400, {"error": f"bad request: {e}"})
+                if not valid_payload(doc):
+                    return self.send_json(400, {"error": "not a HoopStats game_stats file"})
+                if any(j.get("state") == "running" for j in jobs.values()):
+                    return self.send_json(409, {"error": "a share zip is already being packed"})
+                job_id = uuid.uuid4().hex[:12]
+                jobs[job_id] = job = {"job": job_id, "state": "running", "done": 0, "total": 0}
+                threading.Thread(target=run_share, args=(job, doc["data"]), daemon=True).start()
+                return self.send_json(200, {"job": job_id})
             if path not in ("/api/state", "/api/import"):
                 return self.send_json(404, {"error": "not found"})
             if not self.local_request():
