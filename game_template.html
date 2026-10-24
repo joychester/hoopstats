@@ -31,10 +31,10 @@ aside{position:sticky;top:16px;display:grid;gap:16px}
 .board td{padding:6px 0 6px 6px;border-top:1px solid #262c28;text-align:right;font:600 28px/1 var(--digits);color:var(--amber);font-variant-numeric:tabular-nums}
 .board td.zero{color:var(--amber-dim)}
 .board td.lead span{display:inline-block;min-width:1.4em;text-align:center;padding:3px 5px 1px;border-radius:5px;background:var(--amber);color:#1b1305}
-.board table{table-layout:fixed}
-.board th:not(:first-child),.board td:not(:first-child){width:10%}
-.board th.fg,.board td.fg{width:21%;padding-left:12px}
-.board td.fg{font-size:21px;letter-spacing:.01em}
+#board{table-layout:fixed}           /* column widths for the stats table only, not the score form */
+#board th:not(:first-child),#board td:not(:first-child){width:10%}
+#board th.fg,#board td.fg{width:21%;padding-left:12px}
+#board td.fg{font-size:21px;letter-spacing:.01em}
 .board tr.total td{color:var(--total);border-top:0}
 .board tr.total td.zero{color:var(--total)}
 .board tr.total td:first-child{color:var(--total);font-weight:600}
@@ -211,6 +211,20 @@ i.key.miss.mini::before,i.key.miss.mini::after{left:3px;top:-1px;height:10px}
 button.round{width:34px;height:34px;padding:0;border-radius:50%;font:600 20px/1 var(--text);color:var(--court);
   background:#fff;border:1px solid var(--rule);box-shadow:0 1px 2px rgba(0,0,0,.06);display:grid;place-items:center}
 button.round:hover{background:var(--court);color:#fff;border-color:var(--court)}
+/* saving to game_stats.json */
+header .savestat{margin-left:auto;display:inline-flex;align-items:center;gap:7px;font-size:13px;color:#d6f0e0;background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:4px 12px;white-space:nowrap}
+.savestat i,button.round.save .dot{width:8px;height:8px;border-radius:50%;background:#9aa69f;display:inline-block}
+.savestat[data-s=saved] i,button.round.save[data-s=saved] .dot{background:#4cc38a}
+.savestat[data-s=pending] i,.savestat[data-s=saving] i,button.round.save[data-s=pending] .dot,button.round.save[data-s=saving] .dot{background:#f0a35e}
+.savestat[data-s=error]{background:#7a1f1b;border-color:#e0605a;color:#fff}
+.savestat[data-s=error] i,button.round.save[data-s=error] .dot{background:#ff6b63}
+.savestat[data-s=readonly]{color:#cfd6d1}
+button.round.save{position:relative}
+button.round.save svg{width:18px;height:18px}
+button.round.save .dot{position:absolute;top:-2px;right:-2px;width:11px;height:11px;border:2px solid var(--paper)}
+button.round.save[data-s=readonly]{color:#9aa69f}
+.savenote{font-size:12px;color:#9aa69f;margin:8px 0 0}
 .speed{display:flex;flex-direction:column;gap:6px;margin-top:10px;padding-top:12px;border-top:1px solid var(--rule)}
 .speed .lbl{font-size:11px;color:var(--quiet);text-align:center;line-height:1.1}
 button.round.rate{font:600 13px/1 var(--digits);letter-spacing:.02em}
@@ -253,7 +267,7 @@ button.round.rate[aria-pressed=true]{background:var(--court);color:#fff;border-c
 </style>
 </head>
 <body>
-<header><h1 id="title">Game Review</h1><span class="meta" id="meta"></span></header>
+<header><h1 id="title">Game Review</h1><span class="meta" id="meta"></span><span class="savestat" id="savestat" role="status" aria-live="polite" data-s="readonly"><i></i><span></span></span></header>
 <main>
   <div>
     <p class="lead">Each video below is cut down to our possessions. A clip starts several seconds before we win the ball and runs to the end of the possession. Watch it, pick what happened and who did it, then tick Confirmed. Only confirmed clips count toward the stats.</p>
@@ -273,7 +287,8 @@ button.round.rate[aria-pressed=true]{background:var(--court);color:#fff;border-c
       </div>
     </details>
     <div class="vwrap">
-      <div class="foldctl" role="group" aria-label="Expand or collapse videos">
+      <div class="foldctl" role="group" aria-label="Save and view controls">
+        <button type="button" id="savebtn" class="round save" data-s="readonly" aria-label="Save now"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/></svg><span class="dot"></span></button>
         <button type="button" id="expandall" class="round" title="Expand all videos" aria-label="Expand all videos">+</button>
         <button type="button" id="collapseall" class="round" title="Collapse all videos" aria-label="Collapse all videos">−</button>
         <div class="speed" role="group" aria-label="Playback speed for all clips"><span class="lbl">Speed</span>
@@ -298,10 +313,11 @@ button.round.rate[aria-pressed=true]{background:var(--court);color:#fff;border-c
       <div class="actions">
         <button class="primary" id="png">Export PNG</button>
         <button id="csv">Export CSV</button>
-        <button id="save">Save review</button>
-        <label class="btn" for="load">Load review</label>
-        <input id="load" type="file" accept="application/json" hidden>
+        <button id="export">Export game_stats.json</button>
+        <label class="btn" for="importfile">Import game_stats.json</label>
+        <input id="importfile" type="file" accept="application/json,.json" hidden>
       </div>
+      <p class="savenote" id="savenote"></p>
     </div>
     <div class="shots" aria-label="Shot chart">
       <div class="bhead"><h2 id="shottitle">Team shot chart</h2></div>
@@ -326,7 +342,8 @@ const G = window.GAME_DATA, $ = id => document.getElementById(id);
 const KEY = "hoopstats-game-v2:" + G.title;
 let S = {roster: G.roster || "", dir: {}, clips: {}, open: {}};
 try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (e) {}
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
+let afterSave = () => {};          // set by the game_stats.json saver below
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} afterSave(); };
 const fmt = s => { s = Math.round(s); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const dirOf = v => S.dir[v.name] || v.attack || "right";
@@ -1216,12 +1233,6 @@ $("png").onclick = () => {
   img.onerror = () => done(null);
   img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
 };
-$("save").onclick = () => download(G.title + "_review.json", JSON.stringify(S, null, 2), "application/json");
-$("load").onchange = e => {
-  const f = e.target.files[0]; if (!f) return;
-  f.text().then(t => { try { S = Object.assign({roster: "", dir: {}, clips: {}, open: {}}, JSON.parse(t)); save(); if (!$("editor").hidden) renderEditor(); renderAll(); } catch (err) { alert("That file is not a saved review."); } });
-};
-
 /* ---- player editor (replaces the old roster box) ---- */
 const PFIELDS = ["who", "scorer", "assist", "oreb", "to"];
 const pkey = (num, name) => num ? "p" + num : "n:" + name;
@@ -1324,7 +1335,171 @@ function setEditing(on) {
   if (on) renderEditor();
 }
 $("edit").onclick = () => setEditing($("editor").hidden);
+/* ---- saving the review to game_stats.json ----
+   When the page is opened through serve.py (http://127.0.0.1:...), every change to the review data
+   is written to game_stats.json in the game folder 2 seconds after the last change, and right away
+   when the page is hidden or closed. View settings (folded videos, tab, speed, chart filters) stay in
+   this browser only. The browser also keeps a copy, so nothing is lost while the server is down;
+   a flag remembers whether that copy has reached the file. Opened as a plain file, the page cannot
+   write files: it keeps the review in the browser only and says so. */
+const DATA_KEYS = ["roster", "dir", "clips", "game", "halfLen"];
+const SYNC_KEY = KEY + ":sync", SAVE_DELAY = 2000, RETRY_DELAY = 5000, STATS_FILE = "game_stats.json";
+const dataOf = st => Object.fromEntries(DATA_KEYS.filter(k => st[k] !== undefined).map(k => [k, st[k]]));
+const docOf = data => ({format: "hoopstats-game-stats", version: 1, game: G.title, saved: new Date().toISOString(), data});
+const SV = {mode: /^https?:$/.test(location.protocol) ? "connecting" : "readonly", state: "readonly",
+            last: null, timer: null, inflight: false, again: false, sent: null, err: "", note: ""};
+const getSync = () => { try { return JSON.parse(localStorage.getItem(SYNC_KEY) || "null"); } catch (e) { return null; } };
+const setSync = v => { try { localStorage.setItem(SYNC_KEY, JSON.stringify(v)); } catch (e) {} };
+const hhmm = d => d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+const confirmedIn = d => Object.values((d && d.clips) || {}).filter(x => x && x.done).length;
+
+function renderSave() {
+  const st = SV.mode === "server" ? SV.state : SV.mode === "connecting" ? "pending" : "readonly";
+  const text = {
+    saved: SV.last ? `Saved to ${STATS_FILE} · ${hhmm(SV.last)}` : `Saved to ${STATS_FILE}`,
+    pending: SV.mode === "connecting" ? "Connecting…" : "Unsaved changes · saving in 2 s",
+    saving: "Saving…",
+    error: "Not saved · retrying",
+    readonly: "Not saving to a file · open with serve.py"}[st];
+  const tip = {
+    saved: `All changes are in ${STATS_FILE} in the game folder${SV.last ? ` (last saved ${SV.last.toLocaleTimeString()})` : ""}. Click to save now.`,
+    pending: "Changes are saved 2 seconds after your last edit. Click to save now.",
+    saving: `Writing ${STATS_FILE}…`,
+    error: `Could not save ${STATS_FILE}: ${SV.err || "the server did not answer"}. Retrying every few seconds; your changes are kept in this browser meanwhile. Is serve.py still running?`,
+    readonly: `This page was opened as a file, so changes stay in this browser only. To save them to ${STATS_FILE} in the game folder, run: python serve.py <game folder>`}[st];
+  const pill = $("savestat"), btn = $("savebtn");
+  pill.dataset.s = st; pill.querySelector("span").textContent = text; pill.title = tip;
+  btn.dataset.s = st; btn.title = tip; btn.setAttribute("aria-label", st === "readonly" ? "Saving to a file is off" : "Save now");
+  $("savenote").textContent = SV.note;
+}
+
+afterSave = () => {
+  const j = JSON.stringify(dataOf(S));
+  if (j === SV.sent) return;                       // only view settings changed
+  setSync({synced: false, changedAt: Date.now()});
+  if (SV.mode !== "server") return renderSave();
+  if (SV.state !== "error") SV.state = "pending";
+  clearTimeout(SV.timer);
+  SV.timer = setTimeout(flush, SAVE_DELAY);
+  renderSave();
+};
+
+async function flush(leaving = false) {
+  clearTimeout(SV.timer);
+  if (SV.mode !== "server") return;
+  const data = dataOf(S), j = JSON.stringify(data);
+  if (j === SV.sent) { SV.state = "saved"; return renderSave(); }
+  if (SV.inflight) { SV.again = true; return; }
+  SV.inflight = true; SV.state = "saving"; renderSave();
+  const body = JSON.stringify(docOf(data));
+  try {
+    const r = await fetch("api/state", {method: "POST", headers: {"Content-Type": "application/json"}, body,
+                                         keepalive: leaving && body.length < 60000});
+    const res = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(res.error || `${r.status} ${r.statusText}`);
+    SV.sent = j; SV.last = new Date(); SV.err = "";
+    const now = JSON.stringify(dataOf(S));
+    if (now === j) { setSync({synced: true}); SV.state = "saved"; } else SV.state = "pending";
+  } catch (e) {
+    SV.state = "error"; SV.err = String((e && e.message) || e);
+    SV.timer = setTimeout(flush, RETRY_DELAY);
+  }
+  SV.inflight = false; renderSave();
+  if (SV.again || SV.state === "pending") { SV.again = false; clearTimeout(SV.timer); SV.timer = setTimeout(flush, SAVE_DELAY); }
+}
+
+function applyData(d) {                            // replace the review data, keep this browser's view settings
+  DATA_KEYS.forEach(k => { if (d[k] !== undefined) S[k] = d[k]; else delete S[k]; });
+  if (typeof S.roster !== "string") S.roster = G.roster || "";
+  if (!S.dir || typeof S.dir !== "object") S.dir = {};
+  if (!S.clips || typeof S.clips !== "object") S.clips = {};
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
+  if (!$("editor").hidden) renderEditor();
+  renderAll();
+}
+
+async function initSaving() {
+  SV.sent = JSON.stringify(dataOf(S));
+  if (SV.mode !== "connecting") return renderSave();
+  renderSave();
+  let res;
+  try {
+    const r = await fetch("api/state", {cache: "no-store"});
+    res = await r.json();
+    if (!r.ok) throw new Error(res.error || `${r.status} ${r.statusText}`);
+  } catch (e) {
+    SV.mode = "readonly"; SV.note = `Could not reach the save server (${(e && e.message) || e}). Changes stay in this browser.`;
+    return renderSave();
+  }
+  SV.mode = "server";
+  const local = dataOf(S), sync = getSync();
+  if (!res.exists) {                               // first time: move what this browser has into the file
+    SV.sent = null; SV.note = confirmedIn(local) ? `Moved this browser's review (${confirmedIn(local)} confirmed clips) into ${STATS_FILE}.` : "";
+    return flush();
+  }
+  const fileData = (res.doc && res.doc.data) || {};
+  let keepLocal = false;
+  if (sync && sync.synced === false && JSON.stringify(local) !== JSON.stringify(dataOf(fileData))) {
+    const when = sync.changedAt ? new Date(sync.changedAt).toLocaleString() : "earlier";
+    keepLocal = confirm(`This browser has changes to "${G.title}" that are not in ${STATS_FILE} (last change ${when}).\n\n`
+      + `Browser: ${confirmedIn(local)} confirmed clips.   ${STATS_FILE}: ${confirmedIn(fileData)} confirmed clips.\n\n`
+      + `OK: keep the browser's version and save it to the file.\nCancel: use ${STATS_FILE} and drop the browser's changes.`);
+  }
+  if (keepLocal) { SV.sent = null; SV.note = "Saved this browser's version to " + STATS_FILE + "."; return flush(); }
+  SV.sent = JSON.stringify(dataOf(fileData));
+  applyData(fileData);
+  SV.sent = JSON.stringify(dataOf(S));
+  setSync({synced: true});
+  SV.state = "saved"; SV.last = res.mtime ? new Date(res.mtime * 1000) : null;
+  renderSave();
+}
+
+$("savebtn").onclick = () => {
+  if (SV.mode === "server") { SV.note = ""; return flush(); }
+  alert(`Saving to a file is off: this page was opened as a file.\n\nTo save your review to ${STATS_FILE} in the game folder, run in Terminal:\n\n  python serve.py <game folder>\n\nand review in the page it opens.\n\nYour review so far is kept in this browser. To carry it over, click "Export game_stats.json" here, then "Import game_stats.json" on the page serve.py opens.`);
+};
+const leave = () => { if (SV.mode === "server" && SV.state !== "saved") flush(true); };
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") leave(); });
+window.addEventListener("pagehide", leave);
+window.addEventListener("beforeunload", e => {
+  leave();
+  if (SV.mode === "server" && SV.state === "error") { e.preventDefault(); e.returnValue = ""; }   // the browser asks before closing
+});
+
+$("export").onclick = () => download(G.title + "_game_stats.json", JSON.stringify(docOf(dataOf(S)), null, 1), "application/json");
+$("importfile").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  let obj;
+  try { obj = JSON.parse(await f.text()); } catch (err) { return alert("That file is not valid JSON."); }
+  const data = obj && obj.format === "hoopstats-game-stats" ? obj.data : obj;     // older *_review.json files work too
+  if (!data || typeof data !== "object" || Array.isArray(data) || (data.clips !== undefined && typeof data.clips !== "object"))
+    return alert("That file is not a HoopStats game_stats file.");
+  if (obj.game && obj.game !== G.title && !confirm(`This file is from the game "${obj.game}", not "${G.title}". Import it anyway?`)) return;
+  const n = confirmedIn(data), clean = dataOf(data);
+  if (SV.mode === "server") {
+    if (!confirm(`Replace ${STATS_FILE} with ${f.name} (${n} confirmed clips)?\n\nThe current ${STATS_FILE} is kept as a backup in the game folder.`)) return;
+    try {
+      const r = await fetch("api/import", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(docOf(clean))});
+      const res = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(res.error || `${r.status} ${r.statusText}`);
+      SV.note = res.backup ? `Imported ${f.name}. The previous file was kept as ${res.backup}.` : `Imported ${f.name}.`;
+    } catch (err) { return alert(`Import failed: ${(err && err.message) || err}. Nothing was changed.`); }
+    SV.sent = JSON.stringify(clean);
+    applyData(clean);
+    SV.sent = JSON.stringify(dataOf(S));
+    setSync({synced: true}); SV.state = "saved"; SV.last = new Date();
+  } else {
+    if (!confirm(`Replace this browser's review with ${f.name} (${n} confirmed clips)?`)) return;
+    applyData(clean);
+    setSync({synced: false, changedAt: Date.now()});
+    SV.note = `Imported ${f.name} into this browser. Open the page with serve.py to save it to ${STATS_FILE}.`;
+  }
+  renderSave();
+};
+
 renderAll();
+initSaving();
 </script>
 </body>
 </html>

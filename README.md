@@ -76,7 +76,9 @@ source .venv/bin/activate
 python run_game.py ~/hoopstats/games/2026-10-12_vs_Tigers --no-minutes
 ```
 
-5. Open `hoopstats_output/summary.html` inside the game folder.
+5. When processing is done, the summary page opens in your browser. Keep the Terminal window open while you review, and press Ctrl+C there when you are done.
+
+To process several games one after another, list their folders: `python run_game.py games/game1 games/game2 --no-minutes`. The page of the last game opens at the end; open another one with `python serve.py <game folder>`.
 
 Run the same command again after adding videos: finished videos are skipped. A video that fails is skipped and the error goes to `hoopstats_output/run_log.txt`. Press Ctrl+C once to stop, then run the same command to continue.
 
@@ -85,8 +87,15 @@ Options:
 - `--no-minutes` skips appearance grouping and the minutes pages. It is much faster and enough for the box score and shot chart.
 - `--accurate` uses the larger YOLOX-M model at 15 fps, about 3x slower. The default is YOLOX-S at 10 fps.
 - `--redo` reprocesses everything except detection.
+- `--no-serve` only processes and does not open the page, for unattended runs.
 
-Your review is saved in the browser. Use **Save review** to keep a copy as a file and **Load review** to restore it.
+### Where your review is saved
+
+Opened by `run_game.py`, or later with `python serve.py <game folder>`, the page saves your review to `game_stats.json` in the game folder. That covers every result, player, shot spot, attack direction, player list and game info. Saving happens 2 seconds after your last change and right away when you leave the page. The status at the top right shows when it last saved. The save button at the top of the left column saves at once; its dot is green when saved, orange while a save is coming and red if saving failed.
+
+- The page runs on a small server that only this computer can reach. Opening `summary.html` directly also works, but then the review stays in that browser only, and the status says so.
+- **Export game_stats.json** downloads a copy. **Import game_stats.json** replaces the game's file with one you pick; the old file is kept as `game_stats.<date>_<time>.json`.
+- Running `run_game.py` again never touches `game_stats.json`.
 
 ## Pipeline
 
@@ -98,6 +107,7 @@ Your review is saved in the browser. Use **Save review** to keep a copy as a fil
 | 4 | `events.py` | Cuts possession clips for both attack directions |
 | 5 | `export_review.py`, `review_template.html` | Minutes review page |
 | 6 | `run_game.py`, `game_template.html` | Batch run for one game folder and the summary page |
+| 7 | `serve.py` | Local server for the summary page that saves the review to `game_stats.json` |
 
 `run.py` still processes a single video. `eval/` holds the evaluation scripts used to tune tracking and grouping.
 

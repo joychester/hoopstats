@@ -2,6 +2,7 @@
 
 Usage:
     python run_game.py ~/hoopstats/games/2026-10-12_vs_Tigers
+    python run_game.py games/game1 games/game2 games/game3      # several games, one after another
 
 Folder contents:
     player_info.txt   first line: our jersey color ("Jersey: black" or "Jersey: white"),
@@ -10,7 +11,9 @@ Folder contents:
                       Optionally put them in two subfolders, 1st_half/ and 2nd_half/:
                       each half's attack direction is then decided on its own.
 
-Results go to hoopstats_output/ inside the folder; open hoopstats_output/summary.html.
+Results go to hoopstats_output/ inside the folder. When processing is done, the summary page of the
+(last) game opens in the browser through serve.py, which saves your review to game_stats.json in the
+game folder; press Ctrl+C to stop it. Add --no-serve to only process (unattended runs).
 Videos already processed are skipped. A failing video does not stop the others;
 errors are written to hoopstats_output/run_log.txt.
 """
@@ -258,15 +261,8 @@ def report_disagreements(results, log):
                 f"{'its half' if r.get('attack_source') == 'half' else 'the whole game'}")
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("folder", help="folder holding one game")
-    ap.add_argument("--no-minutes", action="store_true", help="skip the minutes review page (faster)")
-    ap.add_argument("--redo", action="store_true", help="reprocess everything except detection")
-    ap.add_argument("--accurate", action="store_true",
-                    help="slower, finer detection (YOLOX-M at 15 fps); default is YOLOX-S at 10 fps")
-    a = ap.parse_args()
-    folder = os.path.abspath(os.path.expanduser(a.folder))
+def process_game(folder, a):
+    """Process one game folder. Returns False when the folder cannot be processed at all."""
     out_root = os.path.join(folder, OUT_DIR)
     os.makedirs(out_root, exist_ok=True)
     log = Log(os.path.join(out_root, "run_log.txt"))
@@ -276,21 +272,21 @@ def main():
     info = os.path.join(folder, "player_info.txt")
     if not os.path.exists(info):
         log("ERROR: player_info.txt not found. First line: 'Jersey: black' or 'Jersey: white', then one player per line.")
-        sys.exit(1)
+        return False
     team, roster = parse_player_info(info)
     if team is None:
         log("ERROR: player_info.txt has no jersey color. Add 'Jersey: black' or 'Jersey: white' as the first line.")
-        sys.exit(1)
+        return False
     log(f"Our jersey: {team}; roster: {len(roster.splitlines())} players")
 
     try:
         found = find_videos(folder)
     except SystemExit as e:
         log(f"ERROR: {e}")
-        sys.exit(1)
+        return False
     if not found:
         log("ERROR: no videos found (.MOV .mp4 .m4v)")
-        sys.exit(1)
+        return False
     stems = [os.path.splitext(os.path.basename(v))[0] for _, v in found]
     if any(h for h, _ in found):
         for h in (1, 2):
@@ -340,7 +336,47 @@ def main():
         f.write("window.GAME_DATA = " + json.dumps(data, ensure_ascii=False) + ";\n")
     shutil.copy(os.path.join(HERE, "game_template.html"), os.path.join(out_root, "summary.html"))
     log(f"Finished: {len(results)} succeeded, {len(failed)} failed")
-    log("Open the summary page:", os.path.join(out_root, "summary.html"))
+    return True
+
+
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="Process one or more game folders, then open the last one's summary page "
+                    "(your review is saved to game_stats.json in the game folder).")
+    ap.add_argument("folders", nargs="+", metavar="folder", help="game folder; give several to process them one after another")
+    ap.add_argument("--no-minutes", action="store_true", help="skip the minutes review page (faster)")
+    ap.add_argument("--redo", action="store_true", help="reprocess everything except detection")
+    ap.add_argument("--accurate", action="store_true",
+                    help="slower, finer detection (YOLOX-M at 15 fps); default is YOLOX-S at 10 fps")
+    ap.add_argument("--no-serve", action="store_true",
+                    help="do not open the summary page when done (for unattended runs)")
+    ap.add_argument("--serve", action="store_true", help=argparse.SUPPRESS)   # the default now; kept so old commands work
+    a = ap.parse_args()
+    folders = [os.path.abspath(os.path.expanduser(f)) for f in a.folders]
+    done = []
+    for n, folder in enumerate(folders, 1):
+        if len(folders) > 1:
+            print(f"\n=== Game {n} of {len(folders)}: {os.path.basename(folder)} ===", flush=True)
+        t0 = time.time()
+        ok = process_game(folder, a)
+        done.append((folder, ok, time.time() - t0))
+    if len(folders) > 1:
+        print("\nSummary:")
+        for folder, ok, sec in done:
+            print(f"  {'done  ' if ok else 'FAILED'} {os.path.basename(folder)} ({sec / 60:.1f} min)"
+                  + ("" if ok else ": see run_log.txt in its hoopstats_output folder"))
+    ready = [f for f, ok, _ in done if ok]
+    if ready and not a.no_serve:
+        if len(ready) > 1:
+            print("Opening the last game. For another one: python serve.py <game folder>")
+        from serve import serve
+        serve(ready[-1])
+    elif ready:
+        print("To review with saving to game_stats.json: python serve.py", ready[-1])
+    if len(ready) < len(folders):
+        sys.exit(1)
 
 
 if __name__ == "__main__":
