@@ -29,14 +29,18 @@ Jersey: black
 - Use either half folders or videos directly in the game folder, not both.
 - Videos are processed in file-name order, so keep the phone's names (IMG_0001, IMG_0002, ...).
 
-## What run_game.py adds
+## What HoopStats adds
 
 ```
 games/2026-10-12_vs_Tigers/
+├── game_stats.json                your review, saved automatically while you work on the summary page
+├── game_stats.<date>_<time>.json  backups kept when you import a review over it
+├── <game>_share_<date>_<time>.zip share zips made with "Download share zip"
 └── hoopstats_output/
-    ├── summary.html               open this in a browser to review clips and see the stats
+    ├── summary.html               the review page; run_game.py and serve.py open it for you
     ├── data.js                    data the summary page reads
     ├── run_log.txt                progress and errors of every run
+    ├── share_cache/               640 px copies of confirmed clips, reused by the next share zip
     └── IMG_3303/                  one folder per video
         ├── detections.json        players and ball found in each frame, plus camera movement (the slow step, cached)
         ├── tracklets.json         players followed over time, team / referee / spectator labels, attack direction
@@ -48,7 +52,7 @@ games/2026-10-12_vs_Tigers/
 
 Run the same command again after adding videos: videos that are already done are skipped. To start a video over, delete its folder in `hoopstats_output/`.
 
-Your review (confirmed clips, shot locations, game info) is saved in the browser, not in these files. Use **Save review** on the summary page to keep a copy.
+Your review (every result and player, shot spots, attack directions, the player list and game info) is saved to `game_stats.json` in the game folder, 2 seconds after each change. That works when the page was opened by `run_game.py` or `python serve.py <game folder>`; keep the Terminal window open while you review. Opening `summary.html` directly also works, but then the review stays in that browser only. Running `run_game.py` again, or deleting `hoopstats_output/`, never touches `game_stats.json`. To move a review to another computer, copy `game_stats.json` along with the game folder, or use **Export** / **Import game_stats.json** on the page.
 
 ```bash
 cd ~/hoopstats && source .venv/bin/activate

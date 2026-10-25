@@ -105,16 +105,16 @@ Opened by `run_game.py`, or later with `python serve.py <game folder>`, the page
 
 | Step | File | What it does |
 | --- | --- | --- |
-| 1 | `detect_video.py`, `frames.py` | YOLOX person/ball detection and camera-motion estimate, cached as `detections.json` |
+| 1 | `detect_video.py`, `detector.py`, `frames.py` | YOLOX person/ball detection and camera-motion estimate, cached as `detections.json` |
 | 2 | `tracker.py` | Camera-compensated tracking with jersey-color gating |
-| 3 | `analyze.py`, `grouping.py` | Team/referee/spectator classification, attack direction, OSNet appearance grouping |
+| 3 | `analyze.py`, `grouping.py`, `reid.py` | Team/referee/spectator classification, attack direction, OSNet appearance grouping |
 | 4 | `events.py` | Cuts possession clips for both attack directions |
 | 5 | `export_review.py`, `review_template.html` | Minutes review page |
-| 6 | `run_game.py`, `game_template.html` | Batch run for one game folder and the summary page |
+| 6 | `run_game.py`, `game_template.html` | Runs steps 1-5 for every video of one or more games and builds the summary page |
 | 7 | `serve.py` | Local server for the summary page that saves the review to `game_stats.json` |
 | 8 | `share.py` | Packs the share zip (also runs on its own: `python share.py <game folder>`) |
 
-`run.py` still processes a single video. `eval/` holds the evaluation scripts used to tune tracking and grouping.
+Start everything with `run_game.py` (or `serve.py` / `share.py` for a game already processed); the other files are used by these. `eval/` holds the evaluation scripts used to tune tracking and grouping.
 
 ## Known limits
 

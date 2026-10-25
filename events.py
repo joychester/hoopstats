@@ -1,23 +1,17 @@
-"""切出关键片段，供人工勾选得分、篮板、助攻、抢断。
+"""Cut possession clips from one video, for review on the summary page (used by run_game.py).
 
-原理：手机镜头跟着球走。镜头停在某个半场 = 进攻那个篮筐的一方在持球进攻；
-镜头从一个半场转到另一个半场 = 球权刚换到进攻那一侧的一方（防守篮板 / 抢断 / 对方得分后发球）。
+The phone camera follows the ball. While it stays on one half, the team attacking that basket has
+the ball; when it swings to the other half, the ball has just changed hands (defensive rebound,
+steal, or an inbound after a score).
 
-两个方向的片段都会切好：本队进攻右侧时，看“进攻右侧”的回合和“转向右侧”的时刻；反之亦然。
-这样进攻方向判断错了，在页面上切换一下即可，不需要重新处理。
-
-单段视频用法（旧）: python events.py --video V --det D.json --attack right --out OUT [--prefill P.json]
-批量处理请用 run_game.py。
+Clips are cut for both attack directions, so if the detected direction is wrong you can switch it
+on the page without processing the video again.
 """
-import argparse
-import json
 import os
-import shutil
 import subprocess
 
 import numpy as np
 
-HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def camera_x(detjson):
@@ -151,44 +145,3 @@ def cut_all(video, detjson, clip_dir, rel_prefix="clips"):
         cut(video, c["start"], c["end"], os.path.join(clip_dir, f"{c['id']}.mp4"))
         c["src"] = f"{rel_prefix}/{c['id']}.mp4"
     return clips, dur, segs
-
-
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--video", required=True)
-    ap.add_argument("--det", required=True)
-    ap.add_argument("--attack", choices=["left", "right"], required=True, help="basket our team attacks at the start of the video")
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--title", default="Key clips review")
-    ap.add_argument("--prefill", default=None)
-    a = ap.parse_args()
-    dj = json.load(open(a.det))
-    shutil.rmtree(a.out, ignore_errors=True)
-    allclips, dur, _ = cut_all(a.video, dj, f"{a.out}/clips")
-    clips = [c for c in allclips if c["side"] in (a.attack, "both")]   # single-video mode: our direction only
-    for n, c in enumerate(clips, 1):                          # 重新编号，便于阅读
-        new = f"C{n}"
-        os.rename(f"{a.out}/{c['src']}", f"{a.out}/clips/{new}.tmp.mp4")
-        c["id"], c["src"] = new, f"clips/{new}.mp4"
-    for f in os.listdir(f"{a.out}/clips"):
-        p = f"{a.out}/clips/{f}"
-        if f.endswith(".tmp.mp4"):
-            os.replace(p, p.replace(".tmp.mp4", ".mp4"))
-        elif not any(f == f"{c['id']}.mp4" for c in clips):
-            os.remove(p)
-    pre = json.load(open(a.prefill)) if a.prefill else {}
-    for c in clips:
-        for p in pre.get("clips", []):
-            if c["kind"] == p["kind"] and c["start"] - 1 <= p["at"] <= c["end"] + 1:
-                c["prefill"] = p
-    covered = sum(c["end"] - c["start"] for c in clips)
-    data = {"title": a.title, "video": os.path.basename(a.video), "duration": round(dur, 1),
-            "covered": round(covered, 1), "roster": pre.get("roster", ""), "clips": clips}
-    with open(f"{a.out}/data.js", "w") as f:
-        f.write("window.EVENTS = " + json.dumps(data, ensure_ascii=False) + ";\n")
-    shutil.copy(os.path.join(HERE, "events_template.html"), f"{a.out}/index.html")
-    print(f"{len(clips)} clips, {covered:.0f}s total (video {dur:.0f}s)")
-
-
-if __name__ == "__main__":
-    main()
