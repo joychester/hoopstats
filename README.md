@@ -4,7 +4,7 @@
 
 Turn phone videos of a youth basketball game into a box score, shot chart and turnover report for your team. Everything runs on your own Mac: videos never leave your computer.
 
-![Game summary page: score card, player stats, team turnovers and shot chart (names blurred)](summary_screenshot.png)
+![Game summary page: game flow, clip review, score card, player stats, team turnovers and shot chart (names blurred)](summary_screenshot.png)
 
 *The game summary page from a real test game. Player names, team names and the location are blurred.*
 
