@@ -120,7 +120,8 @@ Start everything with `run_game.py` (or `serve.py` / `share.py` for a game alrea
 
 - The detector is a general model, not trained on basketball. Players are found reliably, but the ball is found in only about 10% of frames. That is why shots, scorers and locations come from you.
 - Our jersey numbers are too small to read in wide phone video, so identities come from you.
-- Clips rely on the camera following the ball. When a video starts, the camera often lags behind a change of possession, so a very short first segment is skipped.
+- Clips work best when the camera follows the ball, filmed from near the half-court line. When a video starts, the camera often lags behind a change of possession, so a very short first segment is skipped.
+- When the camera stays on one half for a long time (a phone on a stand, a wide shot, or a filmer who stopped following), possessions are found from where the players are and how big they look instead. This is less precise: a change of possession is noticed a second or two late, and a quick one can be missed.
 - Game-flow times are estimates from the video order and lengths, or from the phone's recording times. Without usable recording times, stretches you did not film are left out, so events after a long gap can appear earlier than they happened.
 - Each clip records one result, so a miss followed by an offensive rebound and a make is recorded as the make plus the offensive rebound.
 - Inference uses the CPU by default. Set `HOOPSTATS_COREML=1` to try Core ML.

@@ -123,9 +123,11 @@ def process_video(log, video, out, team, minutes, roster="", accurate=False):
         name = os.path.basename(out)
         shutil.rmtree(os.path.join(out, "clips"), ignore_errors=True)
         allc, dur, segs = cut_all(video, dj, os.path.join(out, "clips"), rel_prefix=f"{name}/clips")
+        changed = keep_clip_ids((clips or {}).get("clips") or [], allc, os.path.join(out, "clips"), f"{name}/clips")
         clips = {"version": CLIPS_VERSION, "clips": allc, "duration": round(dur, 1), "segments": segs}
         json.dump(clips, open(clips_json, "w"), ensure_ascii=False)
-        log(f"    cut {len(allc)} clips (both directions) in {time.time() - t0:.0f}s")
+        log(f"    cut {len(allc)} clips (both directions) in {time.time() - t0:.0f}s"
+            + (f"; {changed} clips are new, review them again" if changed else ""))
     att = tl.get("attack") or {}
     return {"name": os.path.basename(video), "dir": os.path.basename(out), "duration": clips["duration"],
             "attack_video": att.get("direction"), "confidence_video": att.get("confidence", 0),
@@ -153,6 +155,36 @@ def recorded_at(video):
         return d.astimezone(datetime.timezone.utc).isoformat()
     except Exception:
         return None
+
+
+def keep_clip_ids(old, new, clip_dir, rel_prefix):
+    """Give re-cut clips the ids they had before, so the review stays attached to the same clip.
+
+    A clip with the same half and the same start and end as before keeps its old id. Any other
+    clip gets an id that was never used in this video, so a review saved for a clip that no
+    longer exists can never land on a different one. Returns how many clips are new."""
+    def num(cid):
+        return int(cid[1:]) if cid[1:].isdigit() else 0
+    used = {c["id"] for c in old}
+    nxt = max([num(c["id"]) for c in old + new] + [0]) + 1
+    plan = {}
+    for c in new:
+        same = next((o for o in old if o.get("side") == c["side"] and abs(o["start"] - c["start"]) < 0.25
+                     and abs(o["end"] - c["end"]) < 0.25 and o["id"] not in plan.values()), None)
+        if same:
+            plan[c["id"]] = same["id"]
+        elif c["id"] in used or c["id"] in plan.values():
+            plan[c["id"]] = f"C{nxt}"
+            nxt += 1
+        else:
+            plan[c["id"]] = c["id"]
+    for c in new:                                  # two steps, so renames never overwrite each other
+        os.replace(os.path.join(clip_dir, f"{c['id']}.mp4"), os.path.join(clip_dir, f"{c['id']}.tmp.mp4"))
+    for c in new:
+        os.replace(os.path.join(clip_dir, f"{c['id']}.tmp.mp4"), os.path.join(clip_dir, f"{plan[c['id']]}.mp4"))
+        c["id"] = plan[c["id"]]
+        c["src"] = f"{rel_prefix}/{c['id']}.mp4"
+    return sum(1 for c in new if c["id"] not in used) if old else 0
 
 
 def half_of(name):
