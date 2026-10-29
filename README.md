@@ -21,7 +21,8 @@ You film the game on a phone the usual way, following the ball. HoopStats does t
 - **You confirm each clip** in a summary page:
   - how we got the ball: defensive rebound, steal, block, inbound;
   - the result: made 2 or 3, free throws, missed shot or turnover;
-  - who scored, assisted or grabbed the offensive rebound.
+  - who scored, assisted or grabbed the offensive rebound;
+  - more than one play when a clip holds several (two baskets in a row, or a miss then a put-back): pause the clip where the next play happens and click **+ Add another play**. Each play counts in the stats, the shot chart and the game flow at its own time.
 - **Box score.** Points, field goals made / attempted (2s and 3s, free throws not counted), rebounds, assists, steals and blocks per player, plus a Team Total row. Each column's leader is highlighted.
 - **Team turnovers by type.** Bad pass, out of bounds, offensive foul, ball handling, traveling, moving screen, technical foul or other.
 - **Shot chart.**
@@ -123,7 +124,6 @@ Start everything with `run_game.py` (or `serve.py` / `share.py` for a game alrea
 - Clips work best when the camera follows the ball, filmed from near the half-court line. When a video starts, the camera often lags behind a change of possession, so a very short first segment is skipped.
 - When the camera stays on one half for a long time (a phone on a stand, a wide shot, or a filmer who stopped following), possessions are found from where the players are and how big they look instead. This is less precise: a change of possession is noticed a second or two late, and a quick one can be missed.
 - Game-flow times are estimates from the video order and lengths, or from the phone's recording times. Without usable recording times, stretches you did not film are left out, so events after a long gap can appear earlier than they happened.
-- Each clip records one result, so a miss followed by an offensive rebound and a make is recorded as the make plus the offensive rebound.
 - Inference uses the CPU by default. Set `HOOPSTATS_COREML=1` to try Core ML.
 
 ## Privacy

@@ -264,7 +264,17 @@ button.round.rate[aria-pressed=true]{background:var(--court);color:#fff;border-c
 .flowempty{font-size:14px;color:var(--quiet);padding:12px 0 4px}
 .clip.flash{animation:flash 1.6s ease-out}
 @keyframes flash{0%{box-shadow:0 0 0 4px var(--amber)}100%{box-shadow:0 0 0 0 transparent}}
-@media (max-width:920px){main{grid-template-columns:1fr}aside{position:static}.clip{grid-template-columns:1fr}}
+.clip .cliptail{grid-column:1/-1;display:flex;align-items:center;gap:16px;flex-wrap:wrap;border-top:1px dashed var(--rule);padding-top:10px}
+.clip .cliptail .confirm{margin:0 0 0 auto}
+button.addplay{font-size:13px;padding:5px 12px;border-style:dashed;color:var(--court);background:#fff}
+button.addplay:hover{border-color:var(--court);border-style:solid}
+.moreplay{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px;border-top:1px solid var(--rule);padding-top:12px}
+.playhead{grid-column:1/-1;display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;font-size:14px}
+.playhead b{font-weight:600}
+.playhead .when{color:var(--quiet);font-size:13px}
+.playhead.first{margin-bottom:6px}
+.clip h3 .nplays{font-size:12px;font-weight:600;color:var(--court);background:#e4efe9;border-radius:999px;padding:2px 9px}
+@media (max-width:920px){main{grid-template-columns:1fr}aside{position:static}.clip,.moreplay{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -376,14 +386,23 @@ function pick(f, val, ps, none) {
     `<option value="${esc(p.key)}" ${val === p.key ? "selected" : ""}>${esc(p.label)}</option>`).join("")}</select>`;
 }
 
-function clipHtml(v, c, ps, idx) {
-  const val = S.clips[key(v, c)] || {}, n = esc(key(v, c)), full = c.kind === "full";
-  const askHow = c.won || full;
+// A clip can hold several plays (two baskets in a row, a miss then a put-back). The first play is
+// stored on the clip entry itself, so older reviews keep working; further plays go in .more, each
+// with .at = seconds into the clip where it happened. Stats count every play of a confirmed clip.
+const playsOf = x => !x ? [] : [x, ...(Array.isArray(x.more) ? x.more : [])];
+function playTime(c, x, i) {          // seconds into the source video when play i happened
+  const more = (x && x.more) || [];
+  if (i > 0) return c.start + Math.max(0, +more[i - 1].at || 0);
+  if (x && x.at != null) return c.start + Math.max(0, +x.at);
+  if (!more.length) return Math.max(c.start, c.end - 1);           // one play: at the end of the possession
+  return c.start + Math.min(...more.map(p => +p.at || 0)) / 2;     // before the next play
+}
+function playFields(val, n, ps, askHow, full, p) {
   const how = askHow ? `
-      <fieldset><legend>How did we get the ball?</legend>${radios(n + "-how", [["dreb", "Defensive rebound"], ["stl", "Steal"], ["blk", "Block"], ["inb", "Inbound after their score"], ["other", "Other / not shown"]], val.how)}</fieldset>
+      <fieldset><legend>How did we get the ball?</legend>${radios(`${n}-p${p}-how`, [["dreb", "Defensive rebound"], ["stl", "Steal"], ["blk", "Block"], ["inb", "Inbound after their score"], ["other", "Other / not shown"]], val.how)}</fieldset>
       ${WHO[val.how] ? `<fieldset><legend>${WHO[val.how]}</legend>${pick("who", val.who, ps, "Can't tell")}</fieldset>` : ""}` : "";
-  const result = `
-      <fieldset><legend>${full ? "Result in this video" : "Result of this possession"}</legend>${radios(n + "-result", [["2", "2-pointer made"], ["3", "3-pointer made"], ["ft", "Free throws"], ["miss", "Missed shot"], ["to", "Turnover"]], val.result)}
+  return how + `
+      <fieldset><legend>${p ? "Result of this play" : full ? "Result in this video" : "Result of this possession"}</legend>${radios(`${n}-p${p}-result`, [["2", "2-pointer made"], ["3", "3-pointer made"], ["ft", "Free throws"], ["miss", "Missed shot"], ["to", "Turnover"]], val.result)}
       ${val.result === "none" ? `<p class="spotwarn">Saved earlier as “No score / turnover”. Pick Missed shot or Turnover.</p>` : ""}</fieldset>
       ${val.result === "to" ? `<fieldset><legend>Type of turnover (counted for the team)</legend><select data-f="tot"><option value="">Choose type…</option>${TO_TYPES.map(([t, l]) => `<option value="${t}" ${val.tot === t ? "selected" : ""}>${l}</option>`).join("")}</select></fieldset>` : ""}
       ${val.result === "miss" ? `<fieldset><legend>Shooter</legend>${pick("scorer", val.scorer, ps, "Can't tell")}</fieldset>` : ""}
@@ -392,14 +411,32 @@ function clipHtml(v, c, ps, idx) {
       ${val.result === "ft" ? `<fieldset><legend>Free throws made</legend><select data-f="ftm">${[0, 1, 2, 3].map(k => `<option ${+(val.ftm || 0) === k ? "selected" : ""}>${k}</option>`).join("")}</select></fieldset>` : ""}
       <fieldset><legend>Assist</legend>${pick("assist", val.assist, ps, "None / can't tell")}</fieldset>` : ""}
       <fieldset><legend>Offensive rebound</legend>${pick("oreb", val.oreb, ps, "None / can't tell")}</fieldset>`;
+}
+function clipHtml(v, c, ps, idx) {
+  const k = key(v, c), val = S.clips[k] || {}, n = esc(k), full = c.kind === "full", dir = dirOf(v);
+  const more = Array.isArray(val.more) ? val.more : [];
+  const spot = (pv, p) => ["2", "3", "miss"].includes(pv.result) ? spotHtml(pv, dir, `${k}#${p}`) : "";
   const title = full ? "Whole video" : c.won ? "We win the ball, then our possession" : "Our possession";
   const hint = full ? `<p class="hint">The camera stayed on one half, so the whole video is shown. Fill in only what our team did.</p>`
     : c.won ? `<p class="hint">Starts about 7 seconds before the camera reaches our half, so you can see how we won the ball.</p>` : "";
+  const extra = more.map((pv, i) => `
+    <div class="moreplay" data-p="${i + 1}">
+      <div class="playhead"><b>Play ${i + 2}</b><span class="when">at ${fmt(+pv.at || 0)} in the clip</span>
+        <button type="button" class="linkbtn setat" title="Use the time the clip is paused at">Set to video time</button>
+        <button type="button" class="linkbtn rmplay">Remove play</button></div>
+      <div>${spot(pv, i + 1) || `<p class="hint">For a made or missed shot, a court appears here to place it.</p>`}</div>
+      <div>${playFields(pv, n, ps, true, full, i + 1)}</div>
+    </div>`).join("");
   return `<section class="clip${val.done ? " done" : ""}" data-k="${n}">
-    <h3><span class="id">${idx + 1}</span>${title}<span class="when">${fmt(c.start)} to ${fmt(c.end)}</span></h3>
+    <h3><span class="id">${idx + 1}</span>${title}<span class="when">${fmt(c.start)} to ${fmt(c.end)}</span>${more.length ? `<span class="nplays">${more.length + 1} plays</span>` : ""}</h3>
     <div><video src="${esc(c.src)}" controls preload="none" playsinline></video>${hint}
-      ${["2", "3", "miss"].includes(val.result) ? spotHtml(val, dirOf(v), key(v, c)) : ""}</div>
-    <div>${how}${result}<label class="confirm"><input type="checkbox" data-f="done" ${val.done ? "checked" : ""}> Confirmed</label></div>
+      <div data-p="0">${spot(val, 0)}</div></div>
+    <div data-p="0">${more.length ? `<div class="playhead first"><b>Play 1</b></div>` : ""}${playFields(val, n, ps, c.won || full, full, 0)}</div>
+    ${extra}
+    <div class="cliptail">
+      <button type="button" class="addplay" title="Pause the clip where the next play happens, then click">+ Add another play</button>
+      <label class="confirm"><input type="checkbox" data-f="done" ${val.done ? "checked" : ""}> Confirmed</label>
+    </div>
   </section>`;
 }
 
@@ -493,7 +530,7 @@ function scoreBadge(v, cl) {
   let pts = 0;
   cl.forEach(c => { const x = S.clips[key(v, c)];
     if (!x || !x.done) return;
-    pts += x.result === "2" ? 2 : x.result === "3" ? 3 : x.result === "ft" ? +(x.ftm || 0) : 0; });
+    playsOf(x).forEach(y => { pts += y.result === "2" ? 2 : y.result === "3" ? 3 : y.result === "ft" ? +(y.ftm || 0) : 0; }); });
   return pts ? `<span class="scored" title="${pts} point${pts === 1 ? "" : "s"} in confirmed clips">${HOOP_ICON}+${pts}</span>` : "";
 }
 function renderVideos() {
@@ -550,29 +587,52 @@ function renderVideos() {
     el.querySelectorAll(".seg button").forEach(b => b.onclick = () => { S.dir[v.name] = b.dataset.d; save(); renderAll(); });
     el.querySelectorAll(".clip").forEach(ce => {
       const k = ce.dataset.k;
-      ce.querySelectorAll("input[type=radio]").forEach(r => r.onchange = () => upd(k, r.name.endsWith("-how") ? "how" : r.name.endsWith("-tot") ? "tot" : "result", r.value));
-      ce.querySelectorAll("select").forEach(s => s.onchange = () => upd(k, s.dataset.f, s.value));
+      const pOf = node => +((node.closest("[data-p]") || {dataset: {p: 0}}).dataset.p || 0);
+      const play = p => playsOf(S.clips[k] || {})[p] || {};
+      ce.querySelectorAll("input[type=radio]").forEach(r => r.onchange = () => upd(k, r.name.endsWith("-how") ? "how" : "result", r.value, pOf(r)));
+      ce.querySelectorAll("select").forEach(s => s.onchange = () => upd(k, s.dataset.f, s.value, pOf(s)));
       ce.querySelector("input[data-f=done]").onchange = e => upd(k, "done", e.target.checked);
-      const pk = ce.querySelector("svg.pick");
-      if (pk) pk.onclick = e => {
+      ce.querySelectorAll("svg.pick").forEach(pk => pk.onclick = e => {
+        const p = pOf(pk), pm = `${k}#${p}`;
         const pt = pk.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
         const q = pt.matrixTransform(pk.querySelector("g.court").getScreenCTM().inverse());
-        const x = S.clips[k] || {}, ast = x.result !== "miss" && !!x.assist;
-        const mode = ast ? (placeMode[k] || (x.spot && !x.pass ? "pass" : "shot")) : "shot";
+        const x = play(p), ast = x.result !== "miss" && !!x.assist;
+        const mode = ast ? (placeMode[pm] || (x.spot && !x.pass ? "pass" : "shot")) : "shot";
         if (mode === "shot" && q.y > DRAW_D + 0.5) return;   // shots only in our half; long passes may come from the other half
-        if (ast) placeMode[k] = mode === "shot" && !x.pass ? "pass" : mode;   // after the shot, place the pass next
+        if (ast) placeMode[pm] = mode === "shot" && !x.pass ? "pass" : mode;   // after the shot, place the pass next
         const maxY = mode === "pass" ? 2 * DRAW_D : DRAW_D;
-        upd(k, mode === "pass" ? "pass" : "spot", {x: Math.round(Math.min(50, Math.max(0, q.x)) * 10) / 10, y: Math.round(unsqueeze(Math.min(maxY, Math.max(0, q.y))) * 10) / 10});
+        upd(k, mode === "pass" ? "pass" : "spot", {x: Math.round(Math.min(50, Math.max(0, q.x)) * 10) / 10, y: Math.round(unsqueeze(Math.min(maxY, Math.max(0, q.y))) * 10) / 10}, p);
+      });
+      ce.querySelectorAll(".spotclear").forEach(b => b.onclick = () => { const p = pOf(b); placeMode[`${k}#${p}`] = b.dataset.f === "pass" ? "pass" : "shot"; upd(k, b.dataset.f, null, p); });
+      ce.querySelectorAll(".placeseg button").forEach(b => b.onclick = () => { placeMode[`${k}#${pOf(b)}`] = b.dataset.mode; renderVideos(); });
+      const vid = ce.querySelector("video"), now = () => vid && isFinite(vid.currentTime) ? Math.round(vid.currentTime * 10) / 10 : 0;
+      ce.querySelector(".addplay").onclick = () => {
+        const x = S.clips[k] = S.clips[k] || {};
+        x.more = [...(Array.isArray(x.more) ? x.more : []), {at: now()}];
+        save(); renderAll();
+        const added = document.querySelector(`.clip[data-k="${CSS.escape(k)}"] .moreplay:last-of-type`);
+        if (added) added.scrollIntoView({behavior: "smooth", block: "center"});
       };
-      ce.querySelectorAll(".spotclear").forEach(b => b.onclick = () => { placeMode[k] = b.dataset.f === "pass" ? "pass" : "shot"; upd(k, b.dataset.f, null); });
-      ce.querySelectorAll(".placeseg button").forEach(b => b.onclick = () => { placeMode[k] = b.dataset.mode; renderVideos(); });
+      ce.querySelectorAll(".setat").forEach(b => b.onclick = () => upd(k, "at", now(), pOf(b)));
+      ce.querySelectorAll(".rmplay").forEach(b => b.onclick = () => {
+        const p = pOf(b), x = S.clips[k], pv = x.more[p - 1];
+        if (Object.keys(pv).some(f => f !== "at" && pv[f]) && !confirm(`Remove play ${p + 1} from this clip?`)) return;
+        x.more.splice(p - 1, 1);
+        if (!x.more.length) delete x.more;
+        save(); renderAll();
+      });
     });
     box.appendChild(el);
   });
   window.scrollTo(0, scrollY);
   applyRate(box);
 }
-function upd(k, f, val) { S.clips[k] = Object.assign(S.clips[k] || {}, {[f]: val}); save(); renderAll(); }
+function upd(k, f, val, p = 0) {     // p: which play of the clip (0 = the first, stored on the clip itself)
+  const x = S.clips[k] = S.clips[k] || {};
+  if (p > 0) { x.more = Array.isArray(x.more) ? x.more : []; x.more[p - 1] = Object.assign(x.more[p - 1] || {}, {[f]: val}); }
+  else x[f] = val;
+  save(); renderAll();
+}
 
 const TO_TYPES = [["pass", "Bad pass"], ["oob", "Out of bounds"], ["ofoul", "Offensive foul"], ["dribble", "Ball handling"],
   ["travel", "Traveling"], ["screen", "Moving screen"], ["tech", "Technical foul"], ["other", "Other"]];
@@ -580,7 +640,7 @@ function teamTO() {          // team turnovers by type, confirmed clips only
   const by = Object.fromEntries(TO_TYPES.map(([t]) => [t, 0])); let total = 0;
   G.videos.forEach(v => visible(v).forEach(c => {
     const x = S.clips[key(v, c)];
-    if (x && x.done && x.result === "to") { total++; by[TO_TYPES.some(([t]) => t === x.tot) ? x.tot : "other"]++; }
+    if (x && x.done) playsOf(x).forEach(y => { if (y.result === "to") { total++; by[TO_TYPES.some(([t]) => t === y.tot) ? y.tot : "other"]++; } });
   }));
   return {total, by};
 }
@@ -590,16 +650,18 @@ const fgPct = s => s.fga ? Math.round(100 * s.fgm / s.fga) + "%" : "";
 function stats() {
   const T = {}, add = (p, f, n = 1) => { if (!p) return; T[p] = T[p] || {...ZERO}; T[p][f] += n; };
   G.videos.forEach(v => visible(v).forEach(c => {
-    const x = S.clips[key(v, c)]; if (!x || !x.done) return;
-    if (x.how === "dreb") add(x.who, "reb");
-    if (x.how === "stl") add(x.who, "stl");
-    if (x.how === "blk") add(x.who, "blk");
-    if (x.result === "2") add(x.scorer, "pts", 2);
-    if (x.result === "3") add(x.scorer, "pts", 3);
-    if (x.result === "ft") add(x.scorer, "pts", +(x.ftm || 0));
-    if (x.result === "2" || x.result === "3") { add(x.scorer, "fgm"); add(x.scorer, "fga"); add(x.assist, "ast"); }
-    if (x.result === "miss") add(x.scorer, "fga");        // free throws are not field goals
-    add(x.oreb, "reb");
+    const c0 = S.clips[key(v, c)]; if (!c0 || !c0.done) return;
+    playsOf(c0).forEach(x => {
+      if (x.how === "dreb") add(x.who, "reb");
+      if (x.how === "stl") add(x.who, "stl");
+      if (x.how === "blk") add(x.who, "blk");
+      if (x.result === "2") add(x.scorer, "pts", 2);
+      if (x.result === "3") add(x.scorer, "pts", 3);
+      if (x.result === "ft") add(x.scorer, "pts", +(x.ftm || 0));
+      if (x.result === "2" || x.result === "3") { add(x.scorer, "fgm"); add(x.scorer, "fga"); add(x.assist, "ast"); }
+      if (x.result === "miss") add(x.scorer, "fga");      // free throws are not field goals
+      add(x.oreb, "reb");
+    });
   }));
   return T;
 }
@@ -632,12 +694,13 @@ function renderBoard() {
 function allShots() {       // confirmed field-goal attempts: made 2s and 3s, and missed shots
   const out = [];
   G.videos.forEach(v => visible(v).forEach(c => {
-    const x = S.clips[key(v, c)];
-    if (x && x.done && ["2", "3", "miss"].includes(x.result)) {
+    const c0 = S.clips[key(v, c)];
+    if (c0 && c0.done) playsOf(c0).forEach(x => {
+      if (!["2", "3", "miss"].includes(x.result)) return;
       const made = x.result !== "miss";
       out.push({who: x.scorer || "", spot: x.spot || null, made, pts: made ? +x.result : 0, where: `${v.name} clip ${c.id}`,
                 ast: made ? x.assist || "" : "", pass: made && x.assist && x.pass ? x.pass : null});
-    }
+    });
   }));
   return out;
 }
@@ -943,12 +1006,14 @@ function flowData() {
   return parts.map(({h, vids}) => {
     const tl = halfTimeline(vids), ev = [];
     vids.forEach(v => visible(v).forEach(c => {
-      const x = S.clips[key(v, c)]; if (!x || !x.done) return;
-      const pts = x.result === "2" ? 2 : x.result === "3" ? 3 : x.result === "ft" ? +(x.ftm || 0) : 0;
-      if (!pts && x.result !== "to") return;
-      const t = Math.max(c.start, Math.min(c.end, v.duration) - 1);
-      ev.push({h, v, c, k: key(v, c), m: tl.toMin(v, t), type: pts ? "pt" : "to", pts, res: x.result,
-               who: pts ? ps[x.scorer] || "" : (TO_TYPES.find(([t]) => t === x.tot) || [null, "Type not set"])[1]});
+      const c0 = S.clips[key(v, c)]; if (!c0 || !c0.done) return;
+      playsOf(c0).forEach((x, i) => {
+        const pts = x.result === "2" ? 2 : x.result === "3" ? 3 : x.result === "ft" ? +(x.ftm || 0) : 0;
+        if (!pts && x.result !== "to") return;
+        const t = Math.min(playTime(c, c0, i), v.duration);
+        ev.push({h, v, c, k: key(v, c), t, m: tl.toMin(v, t), type: pts ? "pt" : "to", pts, res: x.result,
+                 who: pts ? ps[x.scorer] || "" : (TO_TYPES.find(([t]) => t === x.tot) || [null, "Type not set"])[1]});
+      });
     }));
     ev.sort((a, b) => a.m - b.m);
     return {h, clock: tl.clock, ev, n: vids.length};
@@ -1052,7 +1117,7 @@ function renderFlow() {
     const e = FLOW[+n.dataset.i];
     n.onmouseenter = () => {
       const s = $("flowchart").querySelector("svg"), sc = s.getBoundingClientRect().width / 1000;
-      tip.innerHTML = `<b>${e.type === "pt" ? (e.res === "ft" ? `Free throws, ${e.pts} made` : `${e.res}-pointer`) : "Turnover"}</b>${e.who ? " · " + esc(e.who) : ""}<br>~${fmt(e.m * 60)} of ${name(e)} · ${esc(e.v.name)} at ${fmt(e.c.end - 1)}`;
+      tip.innerHTML = `<b>${e.type === "pt" ? (e.res === "ft" ? `Free throws, ${e.pts} made` : `${e.res}-pointer`) : "Turnover"}</b>${e.who ? " · " + esc(e.who) : ""}<br>~${fmt(e.m * 60)} of ${name(e)} · ${esc(e.v.name)} at ${fmt(e.t)}`;
       tip.hidden = false;
       const tw = tip.offsetWidth, ww = wrap.clientWidth;
       tip.style.left = Math.min(ww - tw / 2, Math.max(tw / 2, e.x * sc)) + "px"; tip.style.top = e.y * sc - 6 + "px";
@@ -1108,7 +1173,7 @@ $("csv").onclick = () => {
   if (fparts.some(p => p.ev.length)) {
     lines.push("", `"Game flow, estimated game time (half = ${L} min)"`, "Half,Minute,Event,Points,Player or turnover type,Video,Time in video");
     fparts.forEach(p => p.ev.forEach(e => lines.push([q(hn(p.h)), e.m.toFixed(1),
-      q(e.type === "pt" ? (e.res === "ft" ? "Free throws" : e.res + "-pointer") : "Turnover"), e.pts, q(e.who), q(e.v.name), q(fmt(e.c.end - 1))].join(","))));
+      q(e.type === "pt" ? (e.res === "ft" ? "Free throws" : e.res + "-pointer") : "Turnover"), e.pts, q(e.who), q(e.v.name), q(fmt(e.t))].join(","))));
     lines.push("", `"Game flow per ${B} minutes"`, "Half,Minutes,Points,Turnovers");
     fparts.forEach(p => { const nb = Math.ceil(L / B);
       for (let i = 0; i < nb; i++) {
@@ -1246,10 +1311,10 @@ function parseRoster(text) {
     return m ? {num: m[1], name: m[2].trim()} : {num: "", name: l};
   });
 }
-function usedBy(k) { return Object.values(S.clips).some(x => x.done && PFIELDS.some(f => x[f] === k)); }
+function usedBy(k) { return Object.values(S.clips).some(x => x.done && playsOf(x).some(y => PFIELDS.some(f => y[f] === k))); }
 function remap(from, to) {
   if (!from || !to || from === to) return;
-  Object.values(S.clips).forEach(x => PFIELDS.forEach(f => { if (x[f] === from) x[f] = to; }));
+  Object.values(S.clips).forEach(x => playsOf(x).forEach(y => PFIELDS.forEach(f => { if (y[f] === from) y[f] = to; })));
 }
 function readEditor() {
   return [...$("editor").querySelectorAll(".prow")].map(r => ({
