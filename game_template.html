@@ -274,6 +274,19 @@ button.addplay:hover{border-color:var(--court);border-style:solid}
 .playhead .when{color:var(--quiet);font-size:13px}
 .playhead.first{margin-bottom:6px}
 .clip h3 .nplays{font-size:12px;font-weight:600;color:var(--court);background:#e4efe9;border-radius:999px;padding:2px 9px}
+.clip.otherclip{border-style:dashed;background:#fafaf8}
+.clip.otherclip h3{color:var(--quiet)}
+button.othertoggle{font-size:13px;padding:4px 10px}
+button.othertoggle[aria-pressed=true]{background:#efeee8}
+#board td.adj{position:relative}
+#board td.adj::after{content:"";position:absolute;right:-1px;top:7px;width:6px;height:6px;border-radius:50%;background:#7fc7ff}
+.board .legend i.adjkey{display:inline-block;width:6px;height:6px;border-radius:50%;background:#7fc7ff;margin:0 4px 1px 2px}
+#board td.adjcell{padding:3px 0 3px 4px}
+#board td.adjcell input{width:100%;min-width:0;font:600 17px/1 var(--digits);text-align:center;background:#1d221f;color:var(--amber);border:1px solid #3a423d;border-radius:5px;padding:6px 0;-moz-appearance:textfield;appearance:textfield}
+#board td.adjcell input::-webkit-inner-spin-button,#board td.adjcell input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+#board.adjusting th:first-child,#board.adjusting td:first-child{width:auto}
+#board.adjusting th:not(:first-child),#board.adjusting td:not(:first-child){width:11%;text-align:center;padding-left:3px}
+#board td.adjcell input:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 @media (max-width:920px){main{grid-template-columns:1fr}aside{position:static}.clip,.moreplay{grid-template-columns:1fr}}
 </style>
 </head>
@@ -313,7 +326,7 @@ button.addplay:hover{border-color:var(--court);border-style:solid}
   <aside>
     <div class="board" aria-label="Team stats">
       <div id="gameinfo"></div>
-      <div class="bhead"><h2>Team stats, confirmed clips only</h2><button type="button" id="edit">Edit players</button></div>
+      <div class="bhead"><h2>Team stats</h2><button type="button" id="adjust" title="Correct a player's numbers by hand for plays the videos missed">Adjust stats</button><button type="button" id="edit">Edit players</button></div>
       <div id="stats">
         <table id="board"></table>
         <div class="legend"><b></b>Team leader in that column · FG = made / attempted 2s and 3s, no free throws</div>
@@ -362,6 +375,11 @@ const fmt = s => { s = Math.round(s); return `${Math.floor(s / 60)}:${String(s %
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const dirOf = v => S.dir[v.name] || v.attack || "right";
 const visible = v => v.clips.filter(c => c.side === dirOf(v) || c.side === "both");
+// Clips that count toward the stats: ours (by attack direction), plus any clip from the other
+// side that was confirmed while shown with "Show other team's clips" (marked .other). Flipping the
+// attack direction therefore still drops clips confirmed under the wrong direction.
+const counted = v => v.clips.filter(c => c.side === dirOf(v) || c.side === "both" || (S.clips[key(v, c)] || {}).other);
+const otherSide = v => v.clips.filter(c => c.side !== dirOf(v) && c.side !== "both");
 const key = (v, c) => v.name + "|" + c.id;
 const WHO = {dreb: "Rebound by", stl: "Steal by", blk: "Block by"};
 const halfName = h => h === 1 ? "1st half" : "2nd half";
@@ -412,12 +430,12 @@ function playFields(val, n, ps, askHow, full, p) {
       <fieldset><legend>Assist</legend>${pick("assist", val.assist, ps, "None / can't tell")}</fieldset>` : ""}
       <fieldset><legend>Offensive rebound</legend>${pick("oreb", val.oreb, ps, "None / can't tell")}</fieldset>`;
 }
-function clipHtml(v, c, ps, idx) {
+function clipHtml(v, c, ps, idx, other = false) {
   const k = key(v, c), val = S.clips[k] || {}, n = esc(k), full = c.kind === "full", dir = dirOf(v);
   const more = Array.isArray(val.more) ? val.more : [];
   const spot = (pv, p) => ["2", "3", "miss"].includes(pv.result) ? spotHtml(pv, dir, `${k}#${p}`) : "";
-  const title = full ? "Whole video" : c.won ? "We win the ball, then our possession" : "Our possession";
-  const hint = full ? `<p class="hint">The camera stayed on one half, so the whole video is shown. Fill in only what our team did.</p>`
+  const title = other ? "Judged to be the other team's possession" : full ? "Whole video" : c.won ? "We win the ball, then our possession" : "Our possession";
+  const hint = other ? `<p class="hint">Shown because you opened the other team's clips. Record only what our team did here; once confirmed, it counts toward our stats.</p>` : full ? `<p class="hint">The camera stayed on one half, so the whole video is shown. Fill in only what our team did.</p>`
     : c.won ? `<p class="hint">Starts about 7 seconds before the camera reaches our half, so you can see how we won the ball.</p>` : "";
   const extra = more.map((pv, i) => `
     <div class="moreplay" data-p="${i + 1}">
@@ -427,7 +445,7 @@ function clipHtml(v, c, ps, idx) {
       <div>${spot(pv, i + 1) || `<p class="hint">For a made or missed shot, a court appears here to place it.</p>`}</div>
       <div>${playFields(pv, n, ps, true, full, i + 1)}</div>
     </div>`).join("");
-  return `<section class="clip${val.done ? " done" : ""}" data-k="${n}">
+  return `<section class="clip${val.done ? " done" : ""}${other ? " otherclip" : ""}" data-k="${n}">
     <h3><span class="id">${idx + 1}</span>${title}<span class="when">${fmt(c.start)} to ${fmt(c.end)}</span>${more.length ? `<span class="nplays">${more.length + 1} plays</span>` : ""}</h3>
     <div><video src="${esc(c.src)}" controls preload="none" playsinline></video>${hint}
       <div data-p="0">${spot(val, 0)}</div></div>
@@ -558,6 +576,9 @@ function renderVideos() {
   }
   shown.forEach(v => {
     const cl = visible(v), done = cl.filter(c => (S.clips[key(v, c)] || {}).done).length;
+    const oth = otherSide(v), showOth = !!(S.showOther || {})[v.name] || (!!SHARED && (S.showOther || {})[v.name] !== false);
+    const othUsed = oth.filter(c => (S.clips[key(v, c)] || {}).other && (S.clips[key(v, c)] || {}).done).length;
+    const listed = (showOth ? [...cl, ...oth] : cl).sort((a, b) => a.start - b.start);
     const d = dirOf(v), auto = v.attack, conf = v.confidence || 0;
     const own = v.attack_video, ownConf = v.confidence_video || 0, frames = v.frames || 0;
     const note = !auto ? `<span class="note warn">Could not detect the direction. Please choose.</span>`
@@ -573,18 +594,21 @@ function renderVideos() {
     el.className = "video" + (cl.length && done === cl.length ? " complete" : done < cl.length ? " pending" : "");
     el.open = S.open[v.name] !== false;
     el.innerHTML = `
-      <summary><h2>${esc(v.name)}</h2><span class="sub">${fmt(v.duration)} long, ${cl.length} clip${cl.length === 1 ? "" : "s"}</span>${done < cl.length ? `<span class="todo">${cl.length - done} to confirm</span>` : ""}${scoreBadge(v, cl)}<span class="count">${done} / ${cl.length}</span></summary>
+      <summary><h2>${esc(v.name)}</h2><span class="sub">${fmt(v.duration)} long, ${cl.length} clip${cl.length === 1 ? "" : "s"}</span>${done < cl.length ? `<span class="todo">${cl.length - done} to confirm</span>` : ""}${scoreBadge(v, counted(v))}<span class="count">${done} / ${cl.length}</span></summary>
       <div class="vbody">
         <div class="dir">We attack the
           <span class="seg" role="group" aria-label="Basket we attack">
             <button type="button" data-d="left" aria-pressed="${d === "left"}">Left basket</button><button type="button" data-d="right" aria-pressed="${d === "right"}">Right basket</button>
           </span>${note}<span class="spacer"></span>
+          ${oth.length ? `<button type="button" class="othertoggle" aria-pressed="${showOth}" title="Clips the program judged to be the other team's possessions. Open them when a play of ours was missed.">${showOth ? "Hide" : "Show"} other team's clips (${oth.length}${othUsed ? `, ${othUsed} used` : ""})</button>` : ""}
           ${v.review ? `<a class="btn" href="${esc(v.review)}">Review minutes</a>` : ""}
         </div>
-        ${cl.length ? cl.map((c, i) => clipHtml(v, c, ps, i)).join("") : `<p class="none">No clips for this direction in this video.</p>`}
+        ${listed.length ? listed.map((c, i) => clipHtml(v, c, ps, i, !cl.includes(c))).join("") : `<p class="none">No clips for this direction in this video.</p>`}
       </div>`;
     el.addEventListener("toggle", () => { S.open[v.name] = el.open; save(); });
     el.querySelectorAll(".seg button").forEach(b => b.onclick = () => { S.dir[v.name] = b.dataset.d; save(); renderAll(); });
+    const ot = el.querySelector(".othertoggle");
+    if (ot) ot.onclick = () => { S.showOther = Object.assign(S.showOther || {}, {[v.name]: !showOth}); save(); renderVideos(); };
     el.querySelectorAll(".clip").forEach(ce => {
       const k = ce.dataset.k;
       const pOf = node => +((node.closest("[data-p]") || {dataset: {p: 0}}).dataset.p || 0);
@@ -631,6 +655,10 @@ function upd(k, f, val, p = 0) {     // p: which play of the clip (0 = the first
   const x = S.clips[k] = S.clips[k] || {};
   if (p > 0) { x.more = Array.isArray(x.more) ? x.more : []; x.more[p - 1] = Object.assign(x.more[p - 1] || {}, {[f]: val}); }
   else x[f] = val;
+  if (f === "done") {                 // confirmed while shown as the other team's clip: count it for us
+    const v = G.videos.find(v => k.startsWith(v.name + "|")), c = v && v.clips.find(c => key(v, c) === k);
+    if (c && c.side !== dirOf(v) && c.side !== "both") { if (val) x.other = true; else delete x.other; }
+  }
   save(); renderAll();
 }
 
@@ -638,7 +666,7 @@ const TO_TYPES = [["pass", "Bad pass"], ["oob", "Out of bounds"], ["ofoul", "Off
   ["travel", "Traveling"], ["screen", "Moving screen"], ["tech", "Technical foul"], ["other", "Other"]];
 function teamTO() {          // team turnovers by type, confirmed clips only
   const by = Object.fromEntries(TO_TYPES.map(([t]) => [t, 0])); let total = 0;
-  G.videos.forEach(v => visible(v).forEach(c => {
+  G.videos.forEach(v => counted(v).forEach(c => {
     const x = S.clips[key(v, c)];
     if (x && x.done) playsOf(x).forEach(y => { if (y.result === "to") { total++; by[TO_TYPES.some(([t]) => t === y.tot) ? y.tot : "other"]++; } });
   }));
@@ -647,9 +675,15 @@ function teamTO() {          // team turnovers by type, confirmed clips only
 const ZERO = {pts: 0, fgm: 0, fga: 0, reb: 0, ast: 0, stl: 0, blk: 0};
 const fgText = s => `${s.fgm}/${s.fga}`;                       // field goals made / attempted, 2s and 3s only
 const fgPct = s => s.fga ? Math.round(100 * s.fgm / s.fga) + "%" : "";
-function stats() {
+// Hand adjustments (S.adjust = {player: {pts: +3, fga: +1, ...}}) are added on top of what the
+// confirmed clips give, for plays the videos missed. raw = true gives the clip numbers alone.
+const ADJ_FIELDS = ["pts", "fgm", "fga", "reb", "ast", "stl", "blk"];
+const adjOf = p => (S.adjust && S.adjust[p]) || {};
+const hasAdjust = () => Object.values(S.adjust || {}).some(a => ADJ_FIELDS.some(f => +a[f]));
+function stats(raw = false) {
   const T = {}, add = (p, f, n = 1) => { if (!p) return; T[p] = T[p] || {...ZERO}; T[p][f] += n; };
-  G.videos.forEach(v => visible(v).forEach(c => {
+  if (!raw) Object.entries(S.adjust || {}).forEach(([p, a]) => ADJ_FIELDS.forEach(f => { if (+a[f]) add(p, f, +a[f]); }));
+  G.videos.forEach(v => counted(v).forEach(c => {
     const c0 = S.clips[key(v, c)]; if (!c0 || !c0.done) return;
     playsOf(c0).forEach(x => {
       if (x.how === "dreb") add(x.who, "reb");
@@ -670,19 +704,48 @@ function leaders(list) {
   ["pts", "reb", "ast", "stl", "blk"].forEach(f => { top[f] = Math.max(0, ...list.map(s => s[f])); });   // TO is never highlighted
   return top;     // 0 means nobody leads that column yet
 }
+function renderAdjust(rows) {        // edit the final numbers; the difference from the clips is kept as the adjustment
+  const R = stats(true), T = stats(), Fs = [["pts", "PTS"], ["fgm", "FGM"], ["fga", "FGA"], ["reb", "REB"], ["ast", "AST"], ["stl", "STL"], ["blk", "BLK"]];
+  $("board").innerHTML = `<tr><th>Player</th>${Fs.map(([, h]) => `<th>${h}</th>`).join("")}</tr>` +
+    rows.map(p => `<tr><td>${esc(p.label)}</td>${Fs.map(([f]) => {
+      const fin = (T[p.key] || ZERO)[f], clip = (R[p.key] || ZERO)[f];
+      return `<td class="adjcell"><input type="number" min="0" step="1" inputmode="numeric" data-p="${esc(p.key)}" data-f="${f}" value="${fin}" aria-label="${esc(p.label)} ${f.toUpperCase()}" title="From clips: ${clip}"></td>`;
+    }).join("")}</tr>`).join("");
+  $("stats").querySelector(".legend").innerHTML = `Type the correct totals. The difference from the confirmed clips is saved as a hand adjustment; set a number back to the clip value to remove it. Points and shots added here have no court spot or game time, so they are not in the shot chart or the game flow.`;
+  $("board").querySelectorAll("input").forEach(i => i.onchange = () => {
+    const p = i.dataset.p, f = i.dataset.f, clip = (stats(true)[p] || ZERO)[f];
+    const want = Math.max(0, Math.round(+i.value || 0));
+    S.adjust = S.adjust || {};
+    const a = S.adjust[p] = Object.assign({}, S.adjust[p]);
+    if (want - clip) a[f] = want - clip; else delete a[f];
+    if (!Object.keys(a).length) delete S.adjust[p];
+    i.value = want;                  // the table is redrawn with the totals when you click Done
+    save();
+  });
+}
+let adjusting = false;
 function renderBoard() {
   const T = stats(), rows = players();
+  $("adjust").textContent = adjusting ? "Done" : "Adjust stats";
+  $("adjust").classList.toggle("primary", adjusting);
+  $("board").classList.toggle("adjusting", adjusting);
+  if (adjusting) return renderAdjust(rows);
   const Z = {...ZERO};
   rows.forEach(p => { T[p.key] = T[p.key] || Z; });
   const F = ["pts", "fg", "reb", "ast", "stl", "blk"], lead = leaders(rows.map(p => T[p.key]));
   const tot = {...ZERO}; Object.keys(ZERO).forEach(f => { tot[f] = rows.reduce((a, p) => a + T[p.key][f], 0); });
-  const fgCell = s => `<td class="fg${s.fga ? "" : " zero"}" title="${s.fga ? `${fgPct(s)} of field goals (2s and 3s)` : "No field goal attempts"}">${fgText(s)}</td>`;
-  const cell = (n, f) => lead[f] && n === lead[f] ? `<td class="lead"><span>${n}</span></td>` : `<td class="${n ? "" : "zero"}">${n}</td>`;
+  const R = stats(true), adjTip = (p, fs) => {
+    const a = adjOf(p), d = fs.filter(f => +a[f]);
+    return d.length ? ` adj" title="Adjusted by hand: ${d.map(f => `${f.toUpperCase()} ${+a[f] > 0 ? "+" : ""}${+a[f]} (clips: ${(R[p] || ZERO)[f]})`).join(", ")}` : "";
+  };
+  const fgCell = (s, p) => `<td class="fg${s.fga ? "" : " zero"}${p ? adjTip(p, ["fgm", "fga"]) : `" title="${s.fga ? `${fgPct(s)} of field goals (2s and 3s)` : "No field goal attempts"}`}">${fgText(s)}</td>`;
+  const cell = (n, f, p) => lead[f] && n === lead[f] ? `<td class="lead${adjTip(p, [f])}"><span>${n}</span></td>` : `<td class="${n ? "" : "zero"}${adjTip(p, [f])}">${n}</td>`;
   $("board").innerHTML = rows.length
     ? `<tr><th>Player</th><th>PTS</th><th class="fg" title="Field goals made / attempted, 2s and 3s, no free throws">FG</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th></tr>` +
       `<tr class="total"><td>Team Total</td>${F.map(f => f === "fg" ? fgCell(tot) : `<td class="${tot[f] ? "" : "zero"}">${tot[f]}</td>`).join("")}</tr>` +
-      rows.map(p => { const s = T[p.key]; return `<tr><td>${esc(p.label)}</td>${F.map(f => f === "fg" ? fgCell(s) : cell(s[f], f)).join("")}</tr>`; }).join("")
+      rows.map(p => { const s = T[p.key]; return `<tr><td>${esc(p.label)}</td>${F.map(f => f === "fg" ? fgCell(s, p.key) : cell(s[f], f, p.key)).join("")}</tr>`; }).join("")
     : `<tr><td class="empty">No players yet. Use Edit players to add them.</td></tr>`;
+  $("stats").querySelector(".legend").innerHTML = `<b></b>Team leader in that column · FG = made / attempted 2s and 3s, no free throws${hasAdjust() ? ` · <i class="adjkey"></i>adjusted by hand` : ""}`;
   let all = 0, done = 0;
   G.videos.forEach(v => visible(v).forEach(c => { all++; if ((S.clips[key(v, c)] || {}).done) done++; }));
   const to = teamTO(), mx = Math.max(1, ...Object.values(to.by));
@@ -693,7 +756,7 @@ function renderBoard() {
 }
 function allShots() {       // confirmed field-goal attempts: made 2s and 3s, and missed shots
   const out = [];
-  G.videos.forEach(v => visible(v).forEach(c => {
+  G.videos.forEach(v => counted(v).forEach(c => {
     const c0 = S.clips[key(v, c)];
     if (c0 && c0.done) playsOf(c0).forEach(x => {
       if (!["2", "3", "miss"].includes(x.result)) return;
@@ -969,6 +1032,7 @@ function applyRate(root = document) {
 }
 document.querySelectorAll("button.rate").forEach(b => b.onclick = () => { S.rate = +b.dataset.rate; save(); applyRate(); });
 document.addEventListener("loadedmetadata", e => { if (e.target.tagName === "VIDEO") e.target.playbackRate = rate(); }, true);
+$("adjust").onclick = () => { adjusting = !adjusting; if (adjusting && !$("editor").hidden) setEditing(false); renderBoard(); };
 $("expandall").onclick = () => foldAll(true);
 $("collapseall").onclick = () => foldAll(false);
 /* ---- game flow: confirmed points and turnovers on an estimated game clock ----
@@ -1005,7 +1069,7 @@ function flowData() {
   const ps = Object.fromEntries(players().map(p => [p.key, p.label]));
   return parts.map(({h, vids}) => {
     const tl = halfTimeline(vids), ev = [];
-    vids.forEach(v => visible(v).forEach(c => {
+    vids.forEach(v => counted(v).forEach(c => {
       const c0 = S.clips[key(v, c)]; if (!c0 || !c0.done) return;
       playsOf(c0).forEach((x, i) => {
         const pts = x.result === "2" ? 2 : x.result === "3" ? 3 : x.result === "ft" ? +(x.ftm || 0) : 0;
@@ -1167,6 +1231,10 @@ $("csv").onclick = () => {
   const val = (s, f) => f === "pct" ? fgPct(s) : s[f];
   lines.push(["\"Team Total\"", ...F.map(f => val(tot, f))].join(","));
   rs.forEach(([label, s]) => lines.push([`"${label}"`, ...F.map(f => val(s, f))].join(",")));
+  if (hasAdjust()) {
+    lines.push("", "Hand adjustments (already included above)", "Player," + ADJ_FIELDS.map(f => f.toUpperCase()).join(","));
+    players().forEach(p => { const a = adjOf(p.key); if (ADJ_FIELDS.some(f => +a[f])) lines.push([q(p.label), ...ADJ_FIELDS.map(f => +a[f] || 0)].join(",")); });
+  }
   const to = teamTO();
   lines.push("", "Team turnovers,Count", ...TO_TYPES.map(([t, l]) => `"${l}",${to.by[t]}`), `"Total",${to.total}`);
   const fparts = numberedFlow(), B = flowBin(), L = halfLen(), hn = h => h ? halfName(h) : "Game";
@@ -1286,7 +1354,7 @@ function statsPNG(flow = null) {      // flow: {img, h, peaks} drawn between tur
   c.fillStyle = gr; c.fillRect(gx, shotTop - 37, 70, 11);
   drawShotBlock(c, (W - 50 * sc) / 2, shotTop, sc, shots, true);
   c.textAlign = "left"; c.fillStyle = "#5d6862"; c.font = `12px ${text}`;
-  c.fillText("Confirmed clips only. FG: made / attempted 2s and 3s, no free throws. Highlighted: team leader. Heat map: basket at the top.", pad, Hh - 24);
+  c.fillText(`Confirmed clips${hasAdjust() ? " plus hand adjustments" : " only"}. FG: made / attempted 2s and 3s, no free throws. Highlighted: team leader. Heat map: basket at the top.`, pad, Hh - 24);
   return cv;
 }
 $("png").onclick = () => {
@@ -1315,6 +1383,7 @@ function usedBy(k) { return Object.values(S.clips).some(x => x.done && playsOf(x
 function remap(from, to) {
   if (!from || !to || from === to) return;
   Object.values(S.clips).forEach(x => playsOf(x).forEach(y => PFIELDS.forEach(f => { if (y[f] === from) y[f] = to; })));
+  if (S.adjust && S.adjust[from]) { S.adjust[to] = S.adjust[from]; delete S.adjust[from]; }
 }
 function readEditor() {
   return [...$("editor").querySelectorAll(".prow")].map(r => ({
@@ -1403,7 +1472,7 @@ function setEditing(on) {
   $("edit").textContent = on ? "Close" : "Edit players";
   if (on) renderEditor();
 }
-$("edit").onclick = () => setEditing($("editor").hidden);
+$("edit").onclick = () => { if (adjusting) { adjusting = false; renderBoard(); } setEditing($("editor").hidden); };
 /* ---- saving the review to game_stats.json ----
    When the page is opened through serve.py (http://127.0.0.1:...), every change to the review data
    is written to game_stats.json in the game folder 2 seconds after the last change, and right away
@@ -1411,7 +1480,7 @@ $("edit").onclick = () => setEditing($("editor").hidden);
    this browser only. The browser also keeps a copy, so nothing is lost while the server is down;
    a flag remembers whether that copy has reached the file. Opened as a plain file, the page cannot
    write files: it keeps the review in the browser only and says so. */
-const DATA_KEYS = ["roster", "dir", "clips", "game", "halfLen"];
+const DATA_KEYS = ["roster", "dir", "clips", "game", "halfLen", "adjust"];
 const SYNC_KEY = KEY + ":sync", SAVE_DELAY = 2000, RETRY_DELAY = 5000, STATS_FILE = "game_stats.json";
 const dataOf = st => Object.fromEntries(DATA_KEYS.filter(k => st[k] !== undefined).map(k => [k, st[k]]));
 const docOf = data => ({format: "hoopstats-game-stats", version: 1, game: G.title, saved: new Date().toISOString(), data});
@@ -1580,7 +1649,7 @@ $("share").onclick = async () => {
     return alert("Packing a share zip needs the page opened by run_game.py or serve.py, which can write the zip into the game folder.\n\nRun in Terminal:  python serve.py <game folder>");
   const btn = $("share"), label = btn.textContent;
   if (btn.disabled) return;
-  const n = G.videos.reduce((a, v) => a + visible(v).filter(c => (S.clips[key(v, c)] || {}).done).length, 0);
+  const n = G.videos.reduce((a, v) => a + counted(v).filter(c => (S.clips[key(v, c)] || {}).done).length, 0);
   if (!n && !confirm("No clips are confirmed yet. Pack the page without any clips?")) return;
   btn.disabled = true; btn.textContent = "Packing…"; SV.note = ""; renderSave();
   try {

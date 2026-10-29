@@ -23,6 +23,7 @@ You film the game on a phone the usual way, following the ball. HoopStats does t
   - the result: made 2 or 3, free throws, missed shot or turnover;
   - who scored, assisted or grabbed the offensive rebound;
   - more than one play when a clip holds several (two baskets in a row, or a miss then a put-back): pause the clip where the next play happens and click **+ Add another play**. Each play counts in the stats, the shot chart and the game flow at its own time.
+- **Missed plays.** If a play of ours ended up in a clip judged to be the other team's possession, click **Show other team's clips** on that video and confirm it there; it then counts for us. For anything the videos did not catch at all, **Adjust stats** lets you type a player's correct totals; the difference is kept as a hand adjustment and marked with a blue dot.
 - **Box score.** Points, field goals made / attempted (2s and 3s, free throws not counted), rebounds, assists, steals and blocks per player, plus a Team Total row. Each column's leader is highlighted.
 - **Team turnovers by type.** Bad pass, out of bounds, offensive foul, ball handling, traveling, moving screen, technical foul or other.
 - **Shot chart.**

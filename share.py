@@ -43,13 +43,15 @@ def load_game(out):
 
 
 def confirmed_clips(game, data):
-    """[(video, clip)] the page counts: clips on our attack side (or 'both') that are confirmed."""
+    """[(video, clip)] the page counts: confirmed clips on our attack side (or 'both'), plus the
+    other team's clips that were confirmed as ours (marked "other")."""
     picked = []
     dirs, marks = data.get("dir") or {}, data.get("clips") or {}
     for v in game["videos"]:
         d = dirs.get(v["name"]) or v.get("attack") or "right"
         for c in v["clips"]:
-            if c.get("side") in (d, "both") and (marks.get(v["name"] + "|" + c["id"]) or {}).get("done"):
+            m = marks.get(v["name"] + "|" + c["id"]) or {}
+            if m.get("done") and (c.get("side") in (d, "both") or m.get("other")):
                 picked.append((v, c))
     return picked
 
