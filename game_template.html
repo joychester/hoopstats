@@ -278,9 +278,6 @@ button.addplay:hover{border-color:var(--court);border-style:solid}
 .clip.otherclip h3{color:var(--quiet)}
 button.othertoggle{font-size:13px;padding:4px 10px}
 button.othertoggle[aria-pressed=true]{background:#efeee8}
-#board td.adj{position:relative}
-#board td.adj::after{content:"";position:absolute;right:-1px;top:7px;width:6px;height:6px;border-radius:50%;background:#7fc7ff}
-.board .legend i.adjkey{display:inline-block;width:6px;height:6px;border-radius:50%;background:#7fc7ff;margin:0 4px 1px 2px}
 #board td.adjcell{padding:3px 0 3px 4px}
 #board td.adjcell input{width:100%;min-width:0;font:600 17px/1 var(--digits);text-align:center;background:#1d221f;color:var(--amber);border:1px solid #3a423d;border-radius:5px;padding:6px 0;-moz-appearance:textfield;appearance:textfield}
 #board td.adjcell input::-webkit-inner-spin-button,#board td.adjcell input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
@@ -734,18 +731,14 @@ function renderBoard() {
   rows.forEach(p => { T[p.key] = T[p.key] || Z; });
   const F = ["pts", "fg", "reb", "ast", "stl", "blk"], lead = leaders(rows.map(p => T[p.key]));
   const tot = {...ZERO}; Object.keys(ZERO).forEach(f => { tot[f] = rows.reduce((a, p) => a + T[p.key][f], 0); });
-  const R = stats(true), adjTip = (p, fs) => {
-    const a = adjOf(p), d = fs.filter(f => +a[f]);
-    return d.length ? ` adj" title="Adjusted by hand: ${d.map(f => `${f.toUpperCase()} ${+a[f] > 0 ? "+" : ""}${+a[f]} (clips: ${(R[p] || ZERO)[f]})`).join(", ")}` : "";
-  };
-  const fgCell = (s, p) => `<td class="fg${s.fga ? "" : " zero"}${p ? adjTip(p, ["fgm", "fga"]) : `" title="${s.fga ? `${fgPct(s)} of field goals (2s and 3s)` : "No field goal attempts"}`}">${fgText(s)}</td>`;
-  const cell = (n, f, p) => lead[f] && n === lead[f] ? `<td class="lead${adjTip(p, [f])}"><span>${n}</span></td>` : `<td class="${n ? "" : "zero"}${adjTip(p, [f])}">${n}</td>`;
+  const fgCell = s => `<td class="fg${s.fga ? "" : " zero"}" title="${s.fga ? `${fgPct(s)} of field goals (2s and 3s)` : "No field goal attempts"}">${fgText(s)}</td>`;
+  const cell = (n, f) => lead[f] && n === lead[f] ? `<td class="lead"><span>${n}</span></td>` : `<td class="${n ? "" : "zero"}">${n}</td>`;
   $("board").innerHTML = rows.length
     ? `<tr><th>Player</th><th>PTS</th><th class="fg" title="Field goals made / attempted, 2s and 3s, no free throws">FG</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th></tr>` +
       `<tr class="total"><td>Team Total</td>${F.map(f => f === "fg" ? fgCell(tot) : `<td class="${tot[f] ? "" : "zero"}">${tot[f]}</td>`).join("")}</tr>` +
-      rows.map(p => { const s = T[p.key]; return `<tr><td>${esc(p.label)}</td>${F.map(f => f === "fg" ? fgCell(s, p.key) : cell(s[f], f, p.key)).join("")}</tr>`; }).join("")
+      rows.map(p => { const s = T[p.key]; return `<tr><td>${esc(p.label)}</td>${F.map(f => f === "fg" ? fgCell(s) : cell(s[f], f)).join("")}</tr>`; }).join("")
     : `<tr><td class="empty">No players yet. Use Edit players to add them.</td></tr>`;
-  $("stats").querySelector(".legend").innerHTML = `<b></b>Team leader in that column · FG = made / attempted 2s and 3s, no free throws${hasAdjust() ? ` · <i class="adjkey"></i>adjusted by hand` : ""}`;
+  $("stats").querySelector(".legend").innerHTML = `<b></b>Team leader in that column · FG = made / attempted 2s and 3s, no free throws`;
   let all = 0, done = 0;
   G.videos.forEach(v => visible(v).forEach(c => { all++; if ((S.clips[key(v, c)] || {}).done) done++; }));
   const to = teamTO(), mx = Math.max(1, ...Object.values(to.by));
@@ -1354,7 +1347,7 @@ function statsPNG(flow = null) {      // flow: {img, h, peaks} drawn between tur
   c.fillStyle = gr; c.fillRect(gx, shotTop - 37, 70, 11);
   drawShotBlock(c, (W - 50 * sc) / 2, shotTop, sc, shots, true);
   c.textAlign = "left"; c.fillStyle = "#5d6862"; c.font = `12px ${text}`;
-  c.fillText(`Confirmed clips${hasAdjust() ? " plus hand adjustments" : " only"}. FG: made / attempted 2s and 3s, no free throws. Highlighted: team leader. Heat map: basket at the top.`, pad, Hh - 24);
+  c.fillText(`${hasAdjust() ? "" : "Confirmed clips only. "}FG: made / attempted 2s and 3s, no free throws. Highlighted: team leader. Heat map: basket at the top.`, pad, Hh - 24);
   return cv;
 }
 $("png").onclick = () => {
