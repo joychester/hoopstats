@@ -551,6 +551,13 @@ function scoreBadge(v, cl) {
 function renderVideos() {
   const ps = players(), box = $("videos");
   const scrollY = window.scrollY;
+  // Redrawing replaces every <video>; remember where each clip was paused or playing, so picking an
+  // option (or "Set to video time") does not send the clip back to the start.
+  const playback = {};
+  box.querySelectorAll(".clip").forEach(ce => {
+    const vd = ce.querySelector("video");
+    if (vd && (vd.currentTime > 0 || !vd.paused)) playback[ce.dataset.k] = {t: vd.currentTime, playing: !vd.paused && !vd.ended};
+  });
   box.innerHTML = "";
   const halves = [...new Set(G.videos.map(v => v.half).filter(Boolean))];
   box.parentElement.classList.toggle("notabs", !halves.length);
@@ -647,6 +654,13 @@ function renderVideos() {
   });
   window.scrollTo(0, scrollY);
   applyRate(box);
+  box.querySelectorAll(".clip").forEach(ce => {
+    const st = playback[ce.dataset.k], vd = ce.querySelector("video");
+    if (!st || !vd) return;
+    vd.preload = "auto";
+    const go = () => { vd.currentTime = st.t; if (st.playing) vd.play().catch(() => {}); };
+    if (vd.readyState >= 1) go(); else vd.addEventListener("loadedmetadata", go, {once: true});
+  });
 }
 function upd(k, f, val, p = 0) {     // p: which play of the clip (0 = the first, stored on the clip itself)
   const x = S.clips[k] = S.clips[k] || {};
