@@ -548,6 +548,91 @@ function scoreBadge(v, cl) {
     playsOf(x).forEach(y => { pts += y.result === "2" ? 2 : y.result === "3" ? 3 : y.result === "ft" ? +(y.ftm || 0) : 0; }); });
   return pts ? `<span class="scored" title="${pts} point${pts === 1 ? "" : "s"} in confirmed clips">${HOOP_ICON}+${pts}</span>` : "";
 }
+// ---- one video's header: state, counts and the score badge (also refreshed on their own) ----
+function videoState(v) {
+  const cl = visible(v), done = cl.filter(c => (S.clips[key(v, c)] || {}).done).length;
+  const oth = otherSide(v), showOth = !!(S.showOther || {})[v.name] || (!!SHARED && (S.showOther || {})[v.name] !== false);
+  const othUsed = oth.filter(c => (S.clips[key(v, c)] || {}).other && (S.clips[key(v, c)] || {}).done).length;
+  return {cl, done, oth, showOth, othUsed,
+    cls: "video" + (cl.length && done === cl.length ? " complete" : done < cl.length ? " pending" : ""),
+    summary: `<h2>${esc(v.name)}</h2><span class="sub">${fmt(v.duration)} long, ${cl.length} clip${cl.length === 1 ? "" : "s"}</span>${done < cl.length ? `<span class="todo">${cl.length - done} to confirm</span>` : ""}${scoreBadge(v, counted(v))}<span class="count">${done} / ${cl.length}</span>`,
+    othLabel: `${showOth ? "Hide" : "Show"} other team's clips (${oth.length}${othUsed ? `, ${othUsed} used` : ""})`};
+}
+function tabCount(h) {
+  let all = 0, done = 0;
+  G.videos.filter(v => v.half === h).forEach(v => visible(v).forEach(c => { all++; if ((S.clips[key(v, c)] || {}).done) done++; }));
+  return `${done} / ${all}`;
+}
+function wireClip(ce) {            // attach the clip's controls (after drawing it, or redrawing it alone)
+  const k = ce.dataset.k;
+  const pOf = node => +((node.closest("[data-p]") || {dataset: {p: 0}}).dataset.p || 0);
+  const play = p => playsOf(S.clips[k] || {})[p] || {};
+  ce.querySelectorAll("input[type=radio]").forEach(r => r.onchange = () => upd(k, r.name.endsWith("-how") ? "how" : "result", r.value, pOf(r)));
+  ce.querySelectorAll("select").forEach(s => s.onchange = () => upd(k, s.dataset.f, s.value, pOf(s)));
+  ce.querySelector("input[data-f=done]").onchange = e => upd(k, "done", e.target.checked);
+  ce.querySelectorAll("svg.pick").forEach(pk => pk.onclick = e => {
+    const p = pOf(pk), pm = `${k}#${p}`;
+    const pt = pk.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const q = pt.matrixTransform(pk.querySelector("g.court").getScreenCTM().inverse());
+    const x = play(p), ast = x.result !== "miss" && !!x.assist;
+    const mode = ast ? (placeMode[pm] || (x.spot && !x.pass ? "pass" : "shot")) : "shot";
+    if (mode === "shot" && q.y > DRAW_D + 0.5) return;   // shots only in our half; long passes may come from the other half
+    if (ast) placeMode[pm] = mode === "shot" && !x.pass ? "pass" : mode;   // after the shot, place the pass next
+    const maxY = mode === "pass" ? 2 * DRAW_D : DRAW_D;
+    upd(k, mode === "pass" ? "pass" : "spot", {x: Math.round(Math.min(50, Math.max(0, q.x)) * 10) / 10, y: Math.round(unsqueeze(Math.min(maxY, Math.max(0, q.y))) * 10) / 10}, p);
+  });
+  ce.querySelectorAll(".spotclear").forEach(b => b.onclick = () => { const p = pOf(b); placeMode[`${k}#${p}`] = b.dataset.f === "pass" ? "pass" : "shot"; upd(k, b.dataset.f, null, p); });
+  ce.querySelectorAll(".placeseg button").forEach(b => b.onclick = () => { placeMode[`${k}#${pOf(b)}`] = b.dataset.mode; refreshClip(k); });
+  const vid = ce.querySelector("video"), now = () => vid && isFinite(vid.currentTime) ? Math.round(vid.currentTime * 10) / 10 : 0;
+  ce.querySelector(".addplay").onclick = () => {
+    const x = S.clips[k] = S.clips[k] || {};
+    x.more = [...(Array.isArray(x.more) ? x.more : []), {at: now()}];
+    save(); refreshClip(k); refreshSide();
+    const added = document.querySelector(`.clip[data-k="${CSS.escape(k)}"] .moreplay:last-of-type`);
+    if (added) added.scrollIntoView({behavior: "smooth", block: "center"});
+  };
+  ce.querySelectorAll(".setat").forEach(b => b.onclick = () => upd(k, "at", now(), pOf(b)));
+  ce.querySelectorAll(".rmplay").forEach(b => b.onclick = () => {
+    const p = pOf(b), x = S.clips[k], pv = x.more[p - 1];
+    if (Object.keys(pv).some(f => f !== "at" && pv[f]) && !confirm(`Remove play ${p + 1} from this clip?`)) return;
+    x.more.splice(p - 1, 1);
+    if (!x.more.length) delete x.more;
+    save(); refreshClip(k); refreshSide();
+  });
+}
+// ---- update one clip in place: the rest of the page, and the clip's video player, stay untouched ----
+const CLIP_INDEX = {};
+G.videos.forEach(v => v.clips.forEach(c => { CLIP_INDEX[key(v, c)] = {v, c}; }));
+function refreshClip(k) {
+  const old = document.querySelector(`.clip[data-k="${CSS.escape(k)}"]`), vc = CLIP_INDEX[k];
+  if (!old || !vc) return renderVideos();
+  const {v, c} = vc, idx = (+old.querySelector("h3 .id").textContent || 1) - 1;
+  const t = document.createElement("template");
+  t.innerHTML = clipHtml(v, c, players(), idx, !visible(v).includes(c)).trim();
+  const fresh = t.content.firstElementChild;
+  const [oh3, ocol] = old.children, [nh3, ncol, ...rest] = [...fresh.children];
+  old.className = fresh.className;
+  oh3.replaceWith(nh3);
+  const ovid = ocol.querySelector("video"), nvid = ncol.querySelector("video");   // the player never leaves the page
+  [...ocol.childNodes].forEach(n => { if (n !== ovid) n.remove(); });
+  [...ncol.childNodes].forEach(n => { if (n !== nvid) ocol.appendChild(n); });
+  while (old.children.length > 2) old.lastElementChild.remove();
+  rest.forEach(n => old.appendChild(n));
+  wireClip(old);
+  refreshVideo(v);
+}
+function refreshVideo(v) {         // the video's header and the half tabs' counts
+  const el = document.querySelector(`details.video[data-v="${CSS.escape(v.name)}"]`);
+  if (el) {
+    const st = videoState(v);
+    el.className = st.cls;
+    el.querySelector("summary").innerHTML = st.summary;
+    const ot = el.querySelector(".othertoggle");
+    if (ot) ot.textContent = st.othLabel;
+  }
+  document.querySelectorAll(".tabs button[data-h]").forEach(b => { b.querySelector(".tcount").textContent = tabCount(+b.dataset.h); });
+}
+function refreshSide() { renderBoard(); renderShots(); renderFlow(); }   // everything that adds up the clips
 function renderVideos() {
   const ps = players(), box = $("videos");
   const scrollY = window.scrollY;
@@ -567,11 +652,9 @@ function renderVideos() {
     const bar = document.createElement("div");
     bar.className = "tabs"; bar.setAttribute("role", "tablist");
     halves.forEach(h => {
-      let all = 0, done = 0;
-      G.videos.filter(v => v.half === h).forEach(v => visible(v).forEach(c => { all++; if ((S.clips[key(v, c)] || {}).done) done++; }));
       const b = document.createElement("button");
-      b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", S.tab === h);
-      b.innerHTML = `${halfName(h)[0].toUpperCase() + halfName(h).slice(1)}<span class="tcount">${done} / ${all}</span>`;
+      b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", S.tab === h); b.dataset.h = h;
+      b.innerHTML = `${halfName(h)[0].toUpperCase() + halfName(h).slice(1)}<span class="tcount">${tabCount(h)}</span>`;
       b.onclick = () => { S.tab = h; save(); window.scrollTo(0, 0); renderVideos(); };
       bar.appendChild(b);
     });
@@ -579,9 +662,7 @@ function renderVideos() {
     shown = G.videos.filter(v => v.half === S.tab);
   }
   shown.forEach(v => {
-    const cl = visible(v), done = cl.filter(c => (S.clips[key(v, c)] || {}).done).length;
-    const oth = otherSide(v), showOth = !!(S.showOther || {})[v.name] || (!!SHARED && (S.showOther || {})[v.name] !== false);
-    const othUsed = oth.filter(c => (S.clips[key(v, c)] || {}).other && (S.clips[key(v, c)] || {}).done).length;
+    const st = videoState(v), {cl, oth, showOth} = st;
     const listed = (showOth ? [...cl, ...oth] : cl).sort((a, b) => a.start - b.start);
     const d = dirOf(v), auto = v.attack, conf = v.confidence || 0;
     const own = v.attack_video, ownConf = v.confidence_video || 0, frames = v.frames || 0;
@@ -595,16 +676,16 @@ function renderVideos() {
         ? `<span class="note warn">Set from the whole game. This video alone points to the ${own} basket (${Math.round(ownConf * 100)}% of its frames). If it was filmed after the teams switched sides, choose ${own}.</span>`
       : `<span class="note">Set from the whole game (${Math.round(conf * 100)}% of all frames agree).</span>`;
     const el = document.createElement("details");
-    el.className = "video" + (cl.length && done === cl.length ? " complete" : done < cl.length ? " pending" : "");
+    el.className = st.cls; el.dataset.v = v.name;
     el.open = S.open[v.name] !== false;
     el.innerHTML = `
-      <summary><h2>${esc(v.name)}</h2><span class="sub">${fmt(v.duration)} long, ${cl.length} clip${cl.length === 1 ? "" : "s"}</span>${done < cl.length ? `<span class="todo">${cl.length - done} to confirm</span>` : ""}${scoreBadge(v, counted(v))}<span class="count">${done} / ${cl.length}</span></summary>
+      <summary>${st.summary}</summary>
       <div class="vbody">
         <div class="dir">We attack the
           <span class="seg" role="group" aria-label="Basket we attack">
             <button type="button" data-d="left" aria-pressed="${d === "left"}">Left basket</button><button type="button" data-d="right" aria-pressed="${d === "right"}">Right basket</button>
           </span>${note}<span class="spacer"></span>
-          ${oth.length ? `<button type="button" class="othertoggle" aria-pressed="${showOth}" title="Clips the program judged to be the other team's possessions. Open them when a play of ours was missed.">${showOth ? "Hide" : "Show"} other team's clips (${oth.length}${othUsed ? `, ${othUsed} used` : ""})</button>` : ""}
+          ${oth.length ? `<button type="button" class="othertoggle" aria-pressed="${showOth}" title="Clips the program judged to be the other team's possessions. Open them when a play of ours was missed.">${st.othLabel}</button>` : ""}
           ${v.review ? `<a class="btn" href="${esc(v.review)}">Review minutes</a>` : ""}
         </div>
         ${listed.length ? listed.map((c, i) => clipHtml(v, c, ps, i, !cl.includes(c))).join("") : `<p class="none">No clips for this direction in this video.</p>`}
@@ -613,43 +694,7 @@ function renderVideos() {
     el.querySelectorAll(".seg button").forEach(b => b.onclick = () => { S.dir[v.name] = b.dataset.d; save(); renderAll(); });
     const ot = el.querySelector(".othertoggle");
     if (ot) ot.onclick = () => { S.showOther = Object.assign(S.showOther || {}, {[v.name]: !showOth}); save(); renderVideos(); };
-    el.querySelectorAll(".clip").forEach(ce => {
-      const k = ce.dataset.k;
-      const pOf = node => +((node.closest("[data-p]") || {dataset: {p: 0}}).dataset.p || 0);
-      const play = p => playsOf(S.clips[k] || {})[p] || {};
-      ce.querySelectorAll("input[type=radio]").forEach(r => r.onchange = () => upd(k, r.name.endsWith("-how") ? "how" : "result", r.value, pOf(r)));
-      ce.querySelectorAll("select").forEach(s => s.onchange = () => upd(k, s.dataset.f, s.value, pOf(s)));
-      ce.querySelector("input[data-f=done]").onchange = e => upd(k, "done", e.target.checked);
-      ce.querySelectorAll("svg.pick").forEach(pk => pk.onclick = e => {
-        const p = pOf(pk), pm = `${k}#${p}`;
-        const pt = pk.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
-        const q = pt.matrixTransform(pk.querySelector("g.court").getScreenCTM().inverse());
-        const x = play(p), ast = x.result !== "miss" && !!x.assist;
-        const mode = ast ? (placeMode[pm] || (x.spot && !x.pass ? "pass" : "shot")) : "shot";
-        if (mode === "shot" && q.y > DRAW_D + 0.5) return;   // shots only in our half; long passes may come from the other half
-        if (ast) placeMode[pm] = mode === "shot" && !x.pass ? "pass" : mode;   // after the shot, place the pass next
-        const maxY = mode === "pass" ? 2 * DRAW_D : DRAW_D;
-        upd(k, mode === "pass" ? "pass" : "spot", {x: Math.round(Math.min(50, Math.max(0, q.x)) * 10) / 10, y: Math.round(unsqueeze(Math.min(maxY, Math.max(0, q.y))) * 10) / 10}, p);
-      });
-      ce.querySelectorAll(".spotclear").forEach(b => b.onclick = () => { const p = pOf(b); placeMode[`${k}#${p}`] = b.dataset.f === "pass" ? "pass" : "shot"; upd(k, b.dataset.f, null, p); });
-      ce.querySelectorAll(".placeseg button").forEach(b => b.onclick = () => { placeMode[`${k}#${pOf(b)}`] = b.dataset.mode; renderVideos(); });
-      const vid = ce.querySelector("video"), now = () => vid && isFinite(vid.currentTime) ? Math.round(vid.currentTime * 10) / 10 : 0;
-      ce.querySelector(".addplay").onclick = () => {
-        const x = S.clips[k] = S.clips[k] || {};
-        x.more = [...(Array.isArray(x.more) ? x.more : []), {at: now()}];
-        save(); renderAll();
-        const added = document.querySelector(`.clip[data-k="${CSS.escape(k)}"] .moreplay:last-of-type`);
-        if (added) added.scrollIntoView({behavior: "smooth", block: "center"});
-      };
-      ce.querySelectorAll(".setat").forEach(b => b.onclick = () => upd(k, "at", now(), pOf(b)));
-      ce.querySelectorAll(".rmplay").forEach(b => b.onclick = () => {
-        const p = pOf(b), x = S.clips[k], pv = x.more[p - 1];
-        if (Object.keys(pv).some(f => f !== "at" && pv[f]) && !confirm(`Remove play ${p + 1} from this clip?`)) return;
-        x.more.splice(p - 1, 1);
-        if (!x.more.length) delete x.more;
-        save(); renderAll();
-      });
-    });
+    el.querySelectorAll(".clip").forEach(wireClip);
     box.appendChild(el);
   });
   window.scrollTo(0, scrollY);
@@ -670,7 +715,7 @@ function upd(k, f, val, p = 0) {     // p: which play of the clip (0 = the first
     const v = G.videos.find(v => k.startsWith(v.name + "|")), c = v && v.clips.find(c => key(v, c) === k);
     if (c && c.side !== dirOf(v) && c.side !== "both") { if (val) x.other = true; else delete x.other; }
   }
-  save(); renderAll();
+  save(); refreshClip(k); refreshSide();
 }
 
 const TO_TYPES = [["pass", "Bad pass"], ["oob", "Out of bounds"], ["ofoul", "Offensive foul"], ["dribble", "Ball handling"],
