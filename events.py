@@ -43,6 +43,7 @@ def segments(x, t, attack="right", min_len=2.0, detjson=None):
     out = camera_segments(x, t, min_len)
     if detjson is not None:
         out = refine_with_players(out, t, detjson, min_len)
+        out = split_glances(out, x, t, detjson["width"])
     for g in out:
         g["offense"] = g["side"] == attack
     return out
@@ -226,6 +227,68 @@ def refine_with_players(segs, t, detjson, min_len=2.0):
     return out
 
 
+GLANCE_REACH = 0.6     # a short trip must get this far across the camera's range (0 = left end, 1 = right end)
+TRUST_RANGE = 1.5      # the camera position is trusted when its range is at most this many frame widths
+
+
+def split_glances(segs, x, t, width):
+    """In a camera stretch longer than LONG_SEG, find short trips to the other half: the camera
+    crossed the middle of its range, reached at least GLANCE_REACH of the way over and stayed
+    past the middle for MIN_PIECE seconds, but turned back before the hysteresis line. That is
+    usually a whole possession at the other basket filmed without turning all the way (a shot
+    from the top of the key). Each trip becomes its own segment.
+
+    Only when the camera followed the play (no stretch was re-split by the players) and its
+    position can be trusted: a phone that panned between the two baskets covers about one
+    frame width; a much larger range means the estimate drifted over the video, and then a
+    crossing of the middle says nothing. Everywhere else the segments are returned unchanged."""
+    if not segs or any(g.get("by") == "players" for g in segs):
+        return segs
+    xs = smooth(x, t)
+    lo, hi = np.percentile(xs, 10), np.percentile(xs, 90)
+    if hi - lo < 200 or hi - lo > TRUST_RANGE * width:
+        return segs
+    f = (xs - lo) / (hi - lo)
+    out = []
+    for g in segs:
+        if g["end"] - g["start"] <= LONG_SEG:
+            out.append(g)
+            continue
+        idx = np.flatnonzero((t >= g["start"]) & (t <= g["end"]))
+        to_right = g["side"] == "left"
+        other = f[idx] > 0.5 if to_right else f[idx] < 0.5
+        trips, i = [], 0
+        while i < len(idx):
+            if not other[i]:
+                i += 1
+                continue
+            j = i
+            while j < len(idx) and other[j]:
+                j += 1
+            reach = f[idx[i:j]].max() if to_right else 1 - f[idx[i:j]].min()
+            if t[idx[j - 1]] - t[idx[i]] >= MIN_PIECE and reach >= GLANCE_REACH:
+                trips.append((i, j - 1))
+            i = j
+        if not trips:
+            out.append(g)
+            continue
+        flip = "right" if to_right else "left"
+        pieces, s = [], 0
+        for i, j in trips:
+            if i > s:
+                pieces.append({"side": g["side"], "start": float(t[idx[s]]), "end": float(t[idx[i - 1]])})
+            pieces.append({"side": flip, "start": float(t[idx[i]]), "end": float(t[idx[j]]), "by": "glance"})
+            s = j + 1
+        if s < len(idx):
+            pieces.append({"side": g["side"], "start": float(t[idx[s]]), "end": float(t[idx[-1]])})
+        for p in pieces:                       # a sliver left between trips joins the trip before it
+            if out and p["end"] - p["start"] < MIN_PIECE and out[-1].get("by") == "glance":
+                out[-1]["end"] = p["end"]
+            else:
+                out.append(p)
+    return out
+
+
 TAIL_MIN = 1.0         # seconds the camera must stay past the middle at the end of a video
 
 
@@ -261,7 +324,7 @@ def cut(video, t0, t1, path):
                     "-c:a", "aac", "-b:a", "64k", "-movflags", "+faststart", path], check=True)
 
 
-CLIPS_VERSION = 9
+CLIPS_VERSION = 10
 PRE_WIN = 7.0          # seconds kept before the camera swings to our half (5 s + 2 s extra lead-in)
 MIN_FIRST = 8.0        # first segment of a video must last this long, or the ball is likely already the other team's
 

@@ -23,7 +23,7 @@ You film the game on a phone the usual way, following the ball. HoopStats does t
   - the result: made 2 or 3, free throws, missed shot or turnover;
   - who scored, assisted or grabbed the offensive rebound;
   - more than one play when a clip holds several (two baskets in a row, or a miss then a put-back): pause the clip where the next play happens and click **+ Add another play**. Each play counts in the stats, the shot chart and the game flow at its own time.
-- **Missed plays.** If a play of ours ended up in a clip judged to be the other team's possession, click **Show other team's clips** on that video and confirm it there; it then counts for us. For anything the videos did not catch at all, **Adjust stats** lets you type a player's correct totals; the difference is kept as a hand adjustment.
+- **Missed plays.** If a play of ours ended up in a clip judged to be the other team's possession, click **Show other team's clips** on that video and confirm it there; it then counts for us. Clips longer than a minute are tagged **Long clip**, and the button shows how many long ones are still unchecked: those most likely hide a possession of ours. For anything the videos did not catch at all, **Adjust stats** lets you type a player's correct totals; the difference is kept as a hand adjustment.
 - **Box score.** Points, field goals made / attempted (2s and 3s, free throws not counted), rebounds, assists, steals and blocks per player, plus a Team Total row. Each column's leader is highlighted.
 - **Team turnovers by type.** Bad pass, out of bounds, offensive foul, ball handling, traveling, moving screen, technical foul or other.
 - **Shot chart.**
@@ -124,6 +124,7 @@ Start everything with `run_game.py` (or `serve.py` / `share.py` for a game alrea
 - Our jersey numbers are too small to read in wide phone video, so identities come from you.
 - Clips work best when the camera follows the ball, filmed from near the half-court line. When a video starts, the camera often lags behind a change of possession, so a very short first segment is skipped.
 - When the camera stays on one half for a long time (a phone on a stand, a wide shot, or a filmer who stopped following), possessions are found from where the players are and how big they look instead. This is less precise: a change of possession is noticed a second or two late, and a quick one can be missed.
+- When the camera goes only partway toward the other basket and comes back (a shot from the top of the key), that trip is still cut as its own clip if it lasted at least 4 seconds. This is skipped when the camera position has drifted over a long video; the result is then a very long clip, tagged **Long clip** on the page, to check by hand.
 - Game-flow times are estimates from the video order and lengths, or from the phone's recording times. Without usable recording times, stretches you did not film are left out, so events after a long gap can appear earlier than they happened.
 - Inference uses the CPU by default. Set `HOOPSTATS_COREML=1` to try Core ML.
 

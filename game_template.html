@@ -277,6 +277,8 @@ button.addplay:hover{border-color:var(--court);border-style:solid}
 .clip.otherclip{border-style:dashed;background:#fafaf8}
 .clip.otherclip h3{color:var(--quiet)}
 button.othertoggle{font-size:13px;padding:4px 10px}
+button.othertoggle .longn{color:#8a5a00;font-weight:600}
+.clip h3 .long{font-size:12px;font-weight:600;color:#8a5a00;background:#fbefd5;border-radius:999px;padding:2px 9px}
 button.othertoggle[aria-pressed=true]{background:#efeee8}
 #board td.adjcell{padding:3px 0 3px 4px}
 #board td.adjcell input{width:100%;min-width:0;font:600 17px/1 var(--digits);text-align:center;background:#1d221f;color:var(--amber);border:1px solid #3a423d;border-radius:5px;padding:6px 0;-moz-appearance:textfield;appearance:textfield}
@@ -427,6 +429,10 @@ function playFields(val, n, ps, askHow, full, p) {
       <fieldset><legend>Assist</legend>${pick("assist", val.assist, ps, "None / can't tell")}</fieldset>` : ""}
       <fieldset><legend>Offensive rebound</legend>${pick("oreb", val.oreb, ps, "None / can't tell")}</fieldset>`;
 }
+// Clips longer than this most likely hold more than one possession: the camera did not clearly
+// turn to the other half, so the program could not split them.
+const LONG_CLIP = 60;
+const isLong = c => c.kind !== "full" && c.end - c.start > LONG_CLIP;
 function clipHtml(v, c, ps, idx, other = false) {
   const k = key(v, c), val = S.clips[k] || {}, n = esc(k), full = c.kind === "full", dir = dirOf(v);
   const more = Array.isArray(val.more) ? val.more : [];
@@ -434,6 +440,7 @@ function clipHtml(v, c, ps, idx, other = false) {
   const title = other ? "Judged to be the other team's possession" : full ? "Whole video" : c.won ? "We win the ball, then our possession" : "Our possession";
   const hint = other ? `<p class="hint">Shown because you opened the other team's clips. Record only what our team did here; once confirmed, it counts toward our stats.</p>` : full ? `<p class="hint">The camera stayed on one half, so the whole video is shown. Fill in only what our team did.</p>`
     : c.won ? `<p class="hint">Starts about 7 seconds before the camera reaches our half, so you can see how we won the ball.</p>` : "";
+  const longHint = isLong(c) ? `<p class="hint">This clip is ${fmt(c.end - c.start)} long. The camera did not clearly turn between the halves here, so it may hold several possessions, ours included. Use + Add another play for each one.</p>` : "";
   const extra = more.map((pv, i) => `
     <div class="moreplay" data-p="${i + 1}">
       <div class="playhead"><b>Play ${i + 2}</b><span class="when">at ${fmt(+pv.at || 0)} in the clip</span>
@@ -443,8 +450,8 @@ function clipHtml(v, c, ps, idx, other = false) {
       <div>${playFields(pv, n, ps, true, full, i + 1)}</div>
     </div>`).join("");
   return `<section class="clip${val.done ? " done" : ""}${other ? " otherclip" : ""}" data-k="${n}">
-    <h3><span class="id">${idx + 1}</span>${title}<span class="when">${fmt(c.start)} to ${fmt(c.end)}</span>${more.length ? `<span class="nplays">${more.length + 1} plays</span>` : ""}</h3>
-    <div><video src="${esc(c.src)}" controls preload="none" playsinline></video>${hint}
+    <h3><span class="id">${idx + 1}</span>${title}<span class="when">${fmt(c.start)} to ${fmt(c.end)}</span>${more.length ? `<span class="nplays">${more.length + 1} plays</span>` : ""}${isLong(c) ? `<span class="long" title="Over a minute long: may hold several possessions">Long clip</span>` : ""}</h3>
+    <div><video src="${esc(c.src)}" controls preload="none" playsinline></video>${hint}${longHint}
       <div data-p="0">${spot(val, 0)}</div></div>
     <div data-p="0">${more.length ? `<div class="playhead first"><b>Play 1</b></div>` : ""}${playFields(val, n, ps, c.won || full, full, 0)}</div>
     ${extra}
@@ -553,10 +560,11 @@ function videoState(v) {
   const cl = visible(v), done = cl.filter(c => (S.clips[key(v, c)] || {}).done).length;
   const oth = otherSide(v), showOth = !!(S.showOther || {})[v.name] || (!!SHARED && (S.showOther || {})[v.name] !== false);
   const othUsed = oth.filter(c => (S.clips[key(v, c)] || {}).other && (S.clips[key(v, c)] || {}).done).length;
-  return {cl, done, oth, showOth, othUsed,
+  const othLong = oth.filter(c => isLong(c) && !(S.clips[key(v, c)] || {}).done).length;
+  return {cl, done, oth, showOth, othUsed, othLong,
     cls: "video" + (cl.length && done === cl.length ? " complete" : done < cl.length ? " pending" : ""),
     summary: `<h2>${esc(v.name)}</h2><span class="sub">${fmt(v.duration)} long, ${cl.length} clip${cl.length === 1 ? "" : "s"}</span>${done < cl.length ? `<span class="todo">${cl.length - done} to confirm</span>` : ""}${scoreBadge(v, counted(v))}<span class="count">${done} / ${cl.length}</span>`,
-    othLabel: `${showOth ? "Hide" : "Show"} other team's clips (${oth.length}${othUsed ? `, ${othUsed} used` : ""})`};
+    othLabel: `${showOth ? "Hide" : "Show"} other team's clips (${oth.length}${othUsed ? `, ${othUsed} used` : ""})${othLong ? ` <span class="longn">· ${othLong} long, check</span>` : ""}`};
 }
 function tabCount(h) {
   let all = 0, done = 0;
@@ -628,7 +636,7 @@ function refreshVideo(v) {         // the video's header and the half tabs' coun
     el.className = st.cls;
     el.querySelector("summary").innerHTML = st.summary;
     const ot = el.querySelector(".othertoggle");
-    if (ot) ot.textContent = st.othLabel;
+    if (ot) ot.innerHTML = st.othLabel;
   }
   document.querySelectorAll(".tabs button[data-h]").forEach(b => { b.querySelector(".tcount").textContent = tabCount(+b.dataset.h); });
 }
@@ -685,7 +693,7 @@ function renderVideos() {
           <span class="seg" role="group" aria-label="Basket we attack">
             <button type="button" data-d="left" aria-pressed="${d === "left"}">Left basket</button><button type="button" data-d="right" aria-pressed="${d === "right"}">Right basket</button>
           </span>${note}<span class="spacer"></span>
-          ${oth.length ? `<button type="button" class="othertoggle" aria-pressed="${showOth}" title="Clips the program judged to be the other team's possessions. Open them when a play of ours was missed.">${st.othLabel}</button>` : ""}
+          ${oth.length ? `<button type="button" class="othertoggle" aria-pressed="${showOth}" title="Clips the program judged to be the other team's possessions. Open them when a play of ours was missed. Long ones (over a minute) may hide possessions of ours.">${st.othLabel}</button>` : ""}
           ${v.review ? `<a class="btn" href="${esc(v.review)}">Review minutes</a>` : ""}
         </div>
         ${listed.length ? listed.map((c, i) => clipHtml(v, c, ps, i, !cl.includes(c))).join("") : `<p class="none">No clips for this direction in this video.</p>`}
